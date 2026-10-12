@@ -1,9 +1,8 @@
-import os
-
 #!/usr/bin/env python3
 """Generate Flutter native scaffolding and apply VideoForge platform settings."""
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
