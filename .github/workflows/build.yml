@@ -161,8 +161,12 @@ jobs:
           python3 scripts/prepare_platforms.py
           flutter pub get
 
+      
       - name: Build iOS app without signing
-        run: flutter build ios --release --no-codesign
+        run: |
+          flutter build ios --release --no-codesign \
+            --dart-define=CI_BUILD=true
+
 
       - name: Package unsigned iOS app for CI inspection
         run: |
