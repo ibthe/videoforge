@@ -1,3 +1,5 @@
+import os
+
 #!/usr/bin/env python3
 """Generate Flutter native scaffolding and apply VideoForge platform settings."""
 from __future__ import annotations
@@ -13,9 +15,19 @@ ROOT = Path(__file__).resolve().parents[1]
 PLATFORMS = ("android", "ios", "macos", "windows")
 
 
-def run(command: list[str]) -> None:
-    print("+", " ".join(command))
-    subprocess.run(command, cwd=ROOT, check=True)
+
+def run(command):
+    if os.name == "nt" and command and command[0].lower() == "flutter":
+        # На Windows запускаем flutter через командную оболочку,
+        # чтобы корректно вызывался flutter.bat.
+        subprocess.run(
+            subprocess.list2cmdline(command),
+            cwd=ROOT,
+            check=True,
+            shell=True,
+        )
+    else:
+        subprocess.run(command, cwd=ROOT, check=True)
 
 
 def add_plist_bool(path: Path, key: str) -> None:
