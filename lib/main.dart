@@ -186,24 +186,23 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     );
   }
 
+  
   Future<void> _pickVideos() async {
     if (_isEncoding) return;
 
     try {
-      final picked = await FilePicker.platform.pickFiles(
+      final picked = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: _videoExtensions.toList(),
-        allowMultiple: true,
-        withData: false,
       );
 
-      if (picked == null || !mounted) return;
+      if (!mounted || picked.isEmpty) return;
 
       final existingPaths = _jobs.map((job) => job.path).toSet();
       final added = <VideoJob>[];
       var missingPathCount = 0;
 
-      for (final item in picked.files) {
+      for (final item in picked) {
         final filePath = item.path;
 
         if (filePath == null || filePath.isEmpty) {
@@ -211,10 +210,8 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
           continue;
         }
 
-        final extension = p
-            .extension(filePath)
-            .replaceFirst('.', '')
-            .toLowerCase();
+        final extension =
+            p.extension(filePath).replaceFirst('.', '').toLowerCase();
 
         if (!_videoExtensions.contains(extension) ||
             existingPaths.contains(filePath)) {
@@ -226,15 +223,13 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
           continue;
         }
 
-        existingPaths.add(filePath);
+        final bytes = item.lengthSync() ?? (await item.length()) ?? 0;
 
-        added.add(
-          VideoJob(
-            path: filePath,
-            bytes: item.size,
-          ),
-        );
+        existingPaths.add(filePath);
+        added.add(VideoJob(path: filePath, bytes: bytes));
       }
+
+      if (!mounted) return;
 
       setState(() {
         _jobs.addAll(added);
@@ -245,9 +240,10 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
 
       if (missingPathCount > 0 && mounted) {
         _showMessage(
-          'Некоторые файлы недоступны. Проверьте расположение файлов.',
+          'Некоторые файлы недоступны. '
+          'Скачайте их на устройство и выберите снова.',
         );
-      } else if (added.isEmpty && picked.files.isNotEmpty && mounted) {
+      } else if (added.isEmpty && picked.isNotEmpty && mounted) {
         _showMessage('Новых поддерживаемых видео не найдено.');
       }
     } catch (error) {
@@ -256,6 +252,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       }
     }
   }
+
 
   Future<void> _encodeAll() async {
     if (_isEncoding || _outputDirectory == null) return;
