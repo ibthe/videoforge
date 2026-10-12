@@ -2,8 +2,8 @@
 """Generate Flutter native scaffolding and apply VideoForge platform settings."""
 from __future__ import annotations
 
-import plistlib
 import os
+import plistlib
 import re
 import shutil
 import subprocess
@@ -28,6 +28,33 @@ def run(command):
         )
     else:
         subprocess.run(command, cwd=ROOT, check=True)
+
+def ensure_macos_file_picker_entitlements(scaffold: Path) -> None:
+    runner_dir = scaffold / "macos" / "Runner"
+
+    for filename in (
+        "DebugProfile.entitlements",
+        "Release.entitlements",
+    ):
+        path = runner_dir / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        if path.exists():
+            entitlements = plistlib.loads(path.read_bytes())
+        else:
+            entitlements = {}
+
+        entitlements[
+            "com.apple.security.files.user-selected.read-only"
+        ] = True
+
+        path.write_bytes(
+            plistlib.dumps(
+                entitlements,
+                fmt=plistlib.FMT_XML,
+                sort_keys=False,
+            )
+        )
 
 
 def add_plist_bool(path: Path, key: str) -> None:
