@@ -174,7 +174,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
 
       if (home != null && home.isNotEmpty) {
         return Directory(
-          p.join(home, 'Videos', 'Processed_New'),
+          p.join(home, 'Movies', 'Processed_New'),
         );
       }
     }
@@ -813,9 +813,11 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                   ),
                   const SizedBox(height: 7),
                   Text(
-                    Platform.isWindows || Platform.isMacOS
+                    Platform.isWindows
                         ? 'Videos/Processed_New'
-                        : 'Папка приложения / Processed_New',
+                        : Platform.isMacOS
+                            ? 'Movies/Processed_New'
+                            : 'Папка приложения / Processed_New',
                     style: const TextStyle(
                       color: Color(0xFF55D6BE),
                       fontSize: 12,
