@@ -3,9 +3,11 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cross_file/cross_file.dart';
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new/ffprobe_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -66,6 +68,37 @@ class VideoForgeApp extends StatelessWidget {
   }
 }
 
+enum ExportProfile {
+  highQuality,
+  balanced,
+  compact,
+  youtube1080;
+
+  String get title => switch (this) {
+        ExportProfile.highQuality => 'Высокое качество',
+        ExportProfile.balanced => 'Сбалансированный',
+        ExportProfile.compact => 'Компактный размер',
+        ExportProfile.youtube1080 => 'YouTube 1080p',
+      };
+
+  String get description => switch (this) {
+        ExportProfile.highQuality => 'Меньше потерь качества, файл может быть больше.',
+        ExportProfile.balanced => 'Рекомендуемый баланс качества и размера.',
+        ExportProfile.compact => 'Меньше места на диске, заметнее потери качества.',
+        ExportProfile.youtube1080 => 'MP4 до 1080p с сохранением пропорций.',
+      };
+
+  int get crf => switch (this) {
+        ExportProfile.highQuality => 18,
+        ExportProfile.balanced => 20,
+        ExportProfile.compact => 25,
+        ExportProfile.youtube1080 => 20,
+      };
+
+  String get preset => this == ExportProfile.highQuality ? 'slow' : 'medium';
+  bool get limitTo1080p => this == ExportProfile.youtube1080;
+}
+
 enum JobStatus { queued, encoding, done, failed }
 
 class VideoJob {
@@ -78,6 +111,7 @@ class VideoJob {
 
   JobStatus status = JobStatus.queued;
   String? outputPath;
+  int? outputBytes;
   String? error;
 }
 
@@ -103,8 +137,16 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   Directory? _outputDirectory;
   bool _isPreparing = true;
   bool _isEncoding = false;
+  bool _isDragging = false;
+  bool _cancelRequested = false;
+  int? _activeSessionId;
   int _currentJob = 0;
   int _currentTotal = 0;
+  ExportProfile _profile = ExportProfile.balanced;
+  double? _currentProgress;
+  double _currentMediaSeconds = 0;
+  double _currentDurationSeconds = 0;
+  double _currentSpeed = 0;
 
   String _status = 'Подготавливаем папку для результатов…';
   String? _initializationError;
@@ -198,60 +240,82 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       );
 
       if (!mounted || picked.isEmpty) return;
-
-      final existingPaths = _jobs.map((job) => job.path).toSet();
-      final added = <VideoJob>[];
-      var missingPathCount = 0;
-
-      for (final item in picked) {
-        final filePath = item.path;
-
-        if (filePath == null || filePath.isEmpty) {
-          missingPathCount++;
-          continue;
-        }
-
-        final extension =
-            p.extension(filePath).replaceFirst('.', '').toLowerCase();
-
-        if (!_videoExtensions.contains(extension) ||
-            existingPaths.contains(filePath)) {
-          continue;
-        }
-
-        if (!await File(filePath).exists()) {
-          missingPathCount++;
-          continue;
-        }
-
-        final bytes = item.lengthSync() ?? (await item.length()) ?? 0;
-
-        existingPaths.add(filePath);
-        added.add(VideoJob(path: filePath, bytes: bytes));
-      }
-
-      if (!mounted) return;
-
-      setState(() {
-        _jobs.addAll(added);
-        _status = _jobs.isEmpty
-            ? 'Выберите один или несколько видеофайлов'
-            : 'Добавлено файлов: ${added.length}';
-      });
-
-      if (missingPathCount > 0 && mounted) {
-        _showMessage(
-          'Некоторые файлы недоступны. '
-          'Скачайте их на устройство и выберите снова.',
-        );
-      } else if (added.isEmpty && picked.isNotEmpty && mounted) {
-        _showMessage('Новых поддерживаемых видео не найдено.');
-      }
+      await _addVideoPaths(picked.map((item) => item.path).whereType<String>());
     } catch (error) {
       if (mounted) {
         _showMessage('Не удалось выбрать видео: $error');
       }
     }
+  }
+
+  Future<void> _addVideoPaths(Iterable<String> paths) async {
+    if (_isEncoding) {
+      _showMessage('Дождитесь завершения кодирования перед добавлением файлов.');
+      return;
+    }
+
+    final pathList = paths.toList(growable: false);
+    final existingPaths = _jobs.map((job) => _pathKey(job.path)).toSet();
+    final added = <VideoJob>[];
+    var unavailableCount = 0;
+    var unsupportedCount = 0;
+
+    for (final rawPath in pathList) {
+      final filePath = rawPath.trim();
+      if (filePath.isEmpty) {
+        unavailableCount++;
+        continue;
+      }
+
+      final extension = p.extension(filePath).replaceFirst('.', '').toLowerCase();
+      if (!_videoExtensions.contains(extension)) {
+        unsupportedCount++;
+        continue;
+      }
+
+      final key = _pathKey(filePath);
+      if (existingPaths.contains(key)) continue;
+
+      try {
+        final file = File(filePath);
+        if (!await file.exists()) {
+          unavailableCount++;
+          continue;
+        }
+        final stat = await file.stat();
+        if (stat.type != FileSystemEntityType.file) {
+          unsupportedCount++;
+          continue;
+        }
+
+        existingPaths.add(key);
+        added.add(VideoJob(path: file.absolute.path, bytes: stat.size));
+      } catch (_) {
+        unavailableCount++;
+      }
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _jobs.addAll(added);
+      _status = added.isEmpty
+          ? (_jobs.isEmpty ? 'Выберите или перетащите видеофайлы' : 'Новых файлов не добавлено')
+          : 'Добавлено файлов: ${added.length}';
+    });
+
+    if (unavailableCount > 0) {
+      _showMessage('$unavailableCount файл(ов) недоступны. Проверьте путь и права доступа.');
+    } else if (unsupportedCount > 0 && added.isEmpty) {
+      _showMessage('Поддерживаются MP4, MOV, MKV, M4V, AVI и WEBM.');
+    } else if (added.isEmpty && pathList.isNotEmpty) {
+      _showMessage('Эти видео уже есть в очереди.');
+    }
+  }
+
+  String _pathKey(String path) {
+    final normalized = p.normalize(p.absolute(path));
+    return Platform.isWindows ? normalized.toLowerCase() : normalized;
   }
 
 
@@ -273,6 +337,12 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
 
     setState(() {
       _isEncoding = true;
+      _cancelRequested = false;
+      _activeSessionId = null;
+      _currentProgress = null;
+      _currentMediaSeconds = 0;
+      _currentDurationSeconds = 0;
+      _currentSpeed = 0;
       _currentJob = 0;
       _currentTotal = pending.length;
       _status = 'Запускаем кодирование…';
@@ -287,7 +357,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
 
     try {
       for (var index = 0; index < pending.length; index++) {
-        if (!mounted) return;
+        if (!mounted || _cancelRequested) break;
 
         final job = pending[index];
         String? outputPath;
@@ -295,6 +365,10 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
         setState(() {
           _currentJob = index + 1;
           job.status = JobStatus.encoding;
+          _currentProgress = null;
+          _currentMediaSeconds = 0;
+          _currentDurationSeconds = 0;
+          _currentSpeed = 0;
           _status =
               'Кодирование ${index + 1} из ${pending.length}: ${job.name}';
         });
@@ -302,53 +376,77 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
         try {
           outputPath = await _uniqueOutputPath(job.name);
 
+          final durationSeconds = await _getMediaDuration(job.path);
+          if (!mounted) return;
+          setState(() => _currentDurationSeconds = durationSeconds);
+
           final result = await _runFfmpeg(
             job.path,
             outputPath,
+            _profile,
+            durationSeconds,
           );
+          _activeSessionId = null;
 
           if (!mounted) return;
 
           if (result.success) {
+            final outputFile = File(outputPath);
+            final outputBytes = await outputFile.length();
             setState(() {
               job.status = JobStatus.done;
               job.outputPath = outputPath;
+              job.outputBytes = outputBytes;
               job.error = null;
             });
-
             completed++;
           } else {
             await _deleteIfExists(outputPath);
-
-            setState(() {
-              job.status = JobStatus.failed;
-              job.error = result.message ?? 'Неизвестная ошибка FFmpeg.';
-            });
-
-            failed++;
+            if (_cancelRequested) {
+              setState(() {
+                job.status = JobStatus.queued;
+                job.error = null;
+              });
+            } else {
+              setState(() {
+                job.status = JobStatus.failed;
+                job.error = result.message ?? 'Неизвестная ошибка FFmpeg.';
+              });
+              failed++;
+            }
           }
         } catch (error) {
+          _activeSessionId = null;
           if (outputPath != null) {
             await _deleteIfExists(outputPath);
           }
 
           if (!mounted) return;
 
-          setState(() {
-            job.status = JobStatus.failed;
-            job.error = error.toString();
-          });
-
-          failed++;
+          if (_cancelRequested) {
+            setState(() {
+              job.status = JobStatus.queued;
+              job.error = null;
+            });
+          } else {
+            setState(() {
+              job.status = JobStatus.failed;
+              job.error = error.toString();
+            });
+            failed++;
+          }
         }
       }
     } finally {
       if (mounted) {
         setState(() {
           _isEncoding = false;
-          _status = failed == 0
-              ? 'Готово! Успешно обработано: $completed'
-              : 'Завершено: $completed успешно, ошибок: $failed';
+          _activeSessionId = null;
+          _status = _cancelRequested
+              ? 'Обработка остановлена. Готово: $completed; оставшиеся файлы в очереди.'
+              : failed == 0
+                  ? 'Готово! Успешно обработано: $completed'
+                  : 'Завершено: $completed успешно, ошибок: $failed';
         });
       }
     }
@@ -356,15 +454,30 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     if (!mounted) return;
 
     _showMessage(
-      failed == 0
-          ? 'Готово! Файлы сохранены в Processed_New.'
-          : 'Обработка завершена. Успешно: $completed, с ошибкой: $failed.',
+      _cancelRequested
+          ? 'Обработка отменена. Незавершённые видео остались в очереди.'
+          : failed == 0
+              ? 'Готово! Файлы сохранены в Processed_New.'
+              : 'Обработка завершена. Успешно: $completed, с ошибкой: $failed.',
     );
+  }
+
+  Future<double> _getMediaDuration(String inputPath) async {
+    try {
+      final probe = await FFprobeKit.getMediaInformation(inputPath);
+      final information = await probe.getMediaInformation();
+      return double.tryParse(information?.getDuration() ?? '') ?? 0;
+    } catch (_) {
+      // If metadata cannot be read, encoding still proceeds with indeterminate progress.
+      return 0;
+    }
   }
 
   Future<({bool success, String? message})> _runFfmpeg(
     String inputPath,
     String outputPath,
+    ExportProfile profile,
+    double durationSeconds,
   ) async {
     final completer =
         Completer<({bool success, String? message})>();
@@ -379,12 +492,16 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       '0:v:0',
       '-map',
       '0:a?',
+      '-map_metadata',
+      '0',
+      '-map_chapters',
+      '0',
       '-c:v',
       'libx264',
       '-preset',
-      'medium',
+      profile.preset,
       '-crf',
-      '20',
+      profile.crf.toString(),
       '-pix_fmt',
       'yuv420p',
       '-c:a',
@@ -393,11 +510,18 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       '192k',
       '-movflags',
       '+faststart',
-      outputPath,
     ];
 
+    if (profile.limitTo1080p) {
+      args.addAll([
+        '-vf',
+        "scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
+      ]);
+    }
+    args.add(outputPath);
+
     try {
-      await FFmpegKit.executeWithArgumentsAsync(
+      final session = await FFmpegKit.executeWithArgumentsAsync(
         args,
         (session) async {
           try {
@@ -405,44 +529,70 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
 
             if (ReturnCode.isSuccess(returnCode)) {
               if (!completer.isCompleted) {
-                completer.complete(
-                  (success: true, message: null),
-                );
+                completer.complete((success: true, message: null));
               }
             } else {
               final output = await session.getOutput();
               final details = (output ?? '').trim();
 
               if (!completer.isCompleted) {
-                completer.complete(
-                  (
-                    success: false,
-                    message: details.isEmpty
-                        ? 'FFmpeg завершился с кодом '
-                            '${returnCode?.getValue() ?? 'неизвестно'}.'
-                        : _shortError(details),
-                  ),
-                );
+                completer.complete((
+                  success: false,
+                  message: details.isEmpty
+                      ? 'FFmpeg завершился с кодом ${returnCode?.getValue() ?? 'неизвестно'}.'
+                      : _shortError(details),
+                ));
               }
             }
           } catch (error) {
             if (!completer.isCompleted) {
-              completer.complete(
-                (success: false, message: error.toString()),
-              );
+              completer.complete((success: false, message: error.toString()));
             }
           }
         },
+        null,
+        (statistics) {
+          final mediaSeconds = statistics.getTime() / 1000.0;
+          final speed = statistics.getSpeed();
+          if (!mounted) return;
+          setState(() {
+            _currentMediaSeconds = mediaSeconds;
+            _currentSpeed = speed;
+            _currentProgress = durationSeconds > 0
+                ? (mediaSeconds / durationSeconds).clamp(0.0, 1.0).toDouble()
+                : null;
+          });
+        },
       );
+
+      _activeSessionId = session.getSessionId();
+      if (_cancelRequested && _activeSessionId != null) {
+        await FFmpegKit.cancel(_activeSessionId);
+      }
     } catch (error) {
       if (!completer.isCompleted) {
-        completer.complete(
-          (success: false, message: error.toString()),
-        );
+        completer.complete((success: false, message: error.toString()));
       }
     }
 
     return completer.future;
+  }
+
+  Future<void> _cancelEncoding() async {
+    if (!_isEncoding || _cancelRequested) return;
+    setState(() {
+      _cancelRequested = true;
+      _status = 'Отменяем текущий файл…';
+    });
+
+    final sessionId = _activeSessionId;
+    try {
+      if (sessionId != null) {
+        await FFmpegKit.cancel(sessionId);
+      }
+    } catch (error) {
+      if (mounted) _showMessage('Не удалось отменить кодирование: $error');
+    }
   }
 
   String _shortError(String output) {
@@ -579,87 +729,236 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} ГБ';
   }
 
+  String _formatClock(double seconds) {
+    if (!seconds.isFinite || seconds < 0) return '--:--';
+    final total = seconds.round();
+    final hours = total ~/ 3600;
+    final minutes = (total % 3600) ~/ 60;
+    final remainder = total % 60;
+    if (hours > 0) {
+      return '$hours:${minutes.toString().padLeft(2, '0')}:${remainder.toString().padLeft(2, '0')}';
+    }
+    return '$minutes:${remainder.toString().padLeft(2, '0')}';
+  }
+
+  String _sizeChangeLabel(VideoJob job) {
+    final outputBytes = job.outputBytes;
+    if (outputBytes == null || job.bytes <= 0) return '';
+    final change = ((job.bytes - outputBytes) / job.bytes) * 100;
+    if (change >= 0) return '−${change.toStringAsFixed(1)}%';
+    return '+${change.abs().toStringAsFixed(1)}% к размеру';
+  }
+
   @override
   Widget build(BuildContext context) {
     final doneCount =
         _jobs.where((job) => job.status == JobStatus.done).length;
+    final double? batchProgress = _currentProgress == null || _currentTotal == 0
+        ? null
+        : ((_currentJob - 1 + _currentProgress!) / _currentTotal)
+            .clamp(0.0, 1.0)
+            .toDouble();
+    final remainingSeconds = _currentSpeed > 0 && _currentDurationSeconds > 0
+        ? (_currentDurationSeconds - _currentMediaSeconds).clamp(0.0, _currentDurationSeconds) / _currentSpeed
+        : null;
 
     return Scaffold(
       body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 900),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
-              children: <Widget>[
-                _buildHeader(),
-                const SizedBox(height: 24),
-                _buildHeroCard(),
-                const SizedBox(height: 16),
-                _buildOutputCard(),
-                const SizedBox(height: 16),
-                _buildQueueCard(doneCount),
-                if (_isEncoding) ...<Widget>[
-                  const SizedBox(height: 16),
-                  LinearProgressIndicator(
-                    minHeight: 5,
-                    borderRadius: BorderRadius.circular(20),
-                    value: _currentTotal > 0
-                        ? _currentJob / _currentTotal
-                        : null,
-                  ),
-                ],
-                const SizedBox(height: 14),
-                Text(
-                  _status,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.white70,
+        child: _desktopDropTarget(
+          Stack(
+            children: <Widget>[
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 30),
+                    children: <Widget>[
+                      _buildHeader(),
+                      const SizedBox(height: 24),
+                      _buildHeroCard(),
+                      const SizedBox(height: 16),
+                      _buildProfileCard(),
+                      const SizedBox(height: 16),
+                      _buildOutputCard(),
+                      const SizedBox(height: 16),
+                      _buildQueueCard(doneCount),
+                      if (_isEncoding) ...<Widget>[
+                        const SizedBox(height: 16),
+                        LinearProgressIndicator(
+                          minHeight: 5,
+                          borderRadius: BorderRadius.circular(20),
+                          value: batchProgress,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _currentProgress == null
+                              ? 'Обработано ${_formatClock(_currentMediaSeconds)}'
+                              : 'Текущий файл: ${(_currentProgress! * 100).round()}% · ${_formatClock(_currentMediaSeconds)}',
+                          style: const TextStyle(color: Colors.white70, fontSize: 12),
+                        ),
+                        if (_currentSpeed > 0 || remainingSeconds != null)
+                          Text(
+                            '${_currentSpeed > 0 ? 'Скорость ${_currentSpeed.toStringAsFixed(1)}×' : ''}'
+                            '${_currentSpeed > 0 && remainingSeconds != null ? ' · ' : ''}'
+                            '${remainingSeconds != null ? 'Осталось примерно ${_formatClock(remainingSeconds)}' : ''}',
+                            style: const TextStyle(color: Colors.white54, fontSize: 12),
+                          ),
+                      ],
+                      const SizedBox(height: 14),
+                      Text(
+                        _status,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Colors.white70,
+                            ),
                       ),
+                      if (_initializationError != null) ...<Widget>[
+                        const SizedBox(height: 8),
+                        Text(
+                          _initializationError!,
+                          style: const TextStyle(color: Color(0xFFFFC56C)),
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+                      FilledButton.icon(
+                        onPressed: _isPreparing || _isEncoding || _outputDirectory == null
+                            ? null
+                            : _encodeAll,
+                        icon: _isEncoding
+                            ? const SizedBox(
+                                width: 19,
+                                height: 19,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.bolt_rounded),
+                        label: Text(
+                          _isEncoding
+                              ? 'КОДИРОВАНИЕ $_currentJob/$_currentTotal'
+                              : 'КОДИРОВАТЬ',
+                        ),
+                      ),
+                      if (_isEncoding) ...<Widget>[
+                        const SizedBox(height: 10),
+                        OutlinedButton.icon(
+                          onPressed: _cancelRequested ? null : _cancelEncoding,
+                          icon: const Icon(Icons.stop_circle_outlined),
+                          label: Text(_cancelRequested ? 'ОТМЕНА…' : 'ОТМЕНИТЬ ОБРАБОТКУ'),
+                        ),
+                      ],
+                      const SizedBox(height: 10),
+                      Center(
+                        child: Text(
+                          'H.264 · MP4 · AAC · Обработка на устройстве',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.white54,
+                              ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                if (_initializationError != null) ...<Widget>[
-                  const SizedBox(height: 8),
-                  Text(
-                    _initializationError!,
-                    style: const TextStyle(
-                      color: Color(0xFFFFC56C),
+              ),
+              if (_isDragging)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Container(
+                      color: const Color(0x6655D6BE),
+                      alignment: Alignment.center,
+                      child: Container(
+                        margin: const EdgeInsets.all(32),
+                        padding: const EdgeInsets.all(26),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF141A22),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: const Color(0xFF55D6BE), width: 2),
+                        ),
+                        child: const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Icon(Icons.file_download_outlined, size: 44, color: Color(0xFF55D6BE)),
+                            SizedBox(height: 12),
+                            Text(
+                              'Отпустите видео, чтобы добавить в очередь',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                            ),
+                            SizedBox(height: 6),
+                            Text(
+                              'MP4, MOV, MKV, M4V, AVI и WEBM',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.white60),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ],
-                const SizedBox(height: 18),
-                FilledButton.icon(
-                  onPressed: _isPreparing ||
-                          _isEncoding ||
-                          _outputDirectory == null
-                      ? null
-                      : _encodeAll,
-                  icon: _isEncoding
-                      ? const SizedBox(
-                          width: 19,
-                          height: 19,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Icon(Icons.bolt_rounded),
-                  label: Text(
-                    _isEncoding
-                        ? 'КОДИРОВАНИЕ $_currentJob/$_currentTotal'
-                        : 'КОДИРОВАТЬ',
-                  ),
                 ),
-                const SizedBox(height: 10),
-                Center(
-                  child: Text(
-                    'H.264 · MP4 · AAC · Обработка на устройстве',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.white54,
-                        ),
-                  ),
-                ),
-              ],
-            ),
+            ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _desktopDropTarget(Widget child) {
+    if (!(Platform.isMacOS || Platform.isWindows)) {
+      return child;
+    }
+    return DropTarget(
+      onDragEntered: (_) {
+        if (mounted && !_isEncoding) setState(() => _isDragging = true);
+      },
+      onDragExited: (_) {
+        if (mounted) setState(() => _isDragging = false);
+      },
+      onDragDone: (details) {
+        if (!mounted) return;
+        setState(() => _isDragging = false);
+        _addVideoPaths(details.files.map((file) => file.path));
+      },
+      child: child,
+    );
+  }
+
+  Widget _buildProfileCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text(
+              'Профиль экспорта',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 5),
+            const Text(
+              'Один профиль применяется ко всем видео в следующем запуске очереди.',
+              style: TextStyle(color: Colors.white60, fontSize: 12, height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: ExportProfile.values.map((profile) {
+                return ChoiceChip(
+                  label: Text(profile.title),
+                  selected: _profile == profile,
+                  onSelected: _isEncoding
+                      ? null
+                      : (selected) {
+                          if (selected) setState(() => _profile = profile);
+                        },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _profile.description,
+              style: const TextStyle(color: Color(0xFF55D6BE), fontSize: 12),
+            ),
+          ],
         ),
       ),
     );
@@ -739,7 +1038,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
             const SizedBox(height: 8),
             const Text(
               'Выберите файлы — VideoForge создаст папку результатов '
-              'и подготовит видео для совместимого воспроизведения.',
+              'Перетащите файлы в окно или выберите их кнопкой ниже — остальное программа сделает сама.',
               style: TextStyle(
                 color: Colors.white70,
                 height: 1.45,
@@ -977,12 +1276,22 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    '${_formatBytes(job.bytes)}  ·  $statusLabel',
+                    job.outputBytes == null
+                        ? '${_formatBytes(job.bytes)}  ·  $statusLabel'
+                        : '${_formatBytes(job.bytes)} → ${_formatBytes(job.outputBytes!)}  ·  ${_sizeChangeLabel(job)}',
                     style: TextStyle(
                       color: statusColor,
                       fontSize: 12,
                     ),
                   ),
+                  if (job.status == JobStatus.done && job.outputPath != null)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 3),
+                      child: Text(
+                        'Готовый файл сохранён',
+                        style: TextStyle(color: Colors.white38, fontSize: 11),
+                      ),
+                    ),
                   if (job.error != null) ...<Widget>[
                     const SizedBox(height: 4),
                     Text(

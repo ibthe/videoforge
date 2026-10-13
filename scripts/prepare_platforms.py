@@ -31,34 +31,25 @@ def run(command):
 
 
 def ensure_macos_file_picker_entitlements(project_root: Path) -> None:
-    """Ensure both macOS signing configurations contain the required sandbox entitlements."""
+    """Добавляет разрешение на чтение файлов, выбранных пользователем."""
     runner_dir = project_root / "macos" / "Runner"
-    runner_dir.mkdir(parents=True, exist_ok=True)
 
-    required_entitlements = {
-        # Required by file_picker when opening user-selected files.
-        "com.apple.security.files.user-selected.read-only": True,
-        # Lets the sandboxed app save processed files in ~/Movies/Processed_New.
-        "com.apple.security.assets.movies.read-write": True,
-    }
-
-    for filename in ("DebugProfile.entitlements", "Release.entitlements"):
+    for filename in (
+        "DebugProfile.entitlements",
+        "Release.entitlements",
+    ):
         path = runner_dir / filename
 
-        if path.exists():
-            try:
-                entitlements = plistlib.loads(path.read_bytes())
-            except Exception as error:
-                raise RuntimeError(
-                    f"Не удалось прочитать entitlements {path}: {error}"
-                ) from error
-        else:
-            # Create a minimal valid sandbox entitlement file if Flutter's
-            # generated template ever stops providing it.
-            entitlements = {"com.apple.security.app-sandbox": True}
+        if not path.exists():
+            print(f"Предупреждение: файл не найден: {path}")
+            continue
 
-        entitlements["com.apple.security.app-sandbox"] = True
-        entitlements.update(required_entitlements)
+        entitlements = plistlib.loads(path.read_bytes())
+
+        entitlements[
+            "com.apple.security.files.user-selected.read-only"
+        ] = True
+        entitlements["com.apple.security.assets.movies.read-write"] = True
 
         path.write_bytes(
             plistlib.dumps(
@@ -67,58 +58,8 @@ def ensure_macos_file_picker_entitlements(project_root: Path) -> None:
                 sort_keys=False,
             )
         )
-        print(f"Entitlements обновлены: {path.relative_to(project_root)}")
 
-
-def ensure_macos_code_sign_entitlements(project_root: Path) -> None:
-    """Explicitly connect Runner build configurations to the right entitlement files."""
-    project = project_root / "macos" / "Runner.xcodeproj" / "project.pbxproj"
-    if not project.exists():
-        raise RuntimeError(f"Не найден Xcode-проект macOS: {project}")
-
-    text = project.read_text(encoding="utf-8")
-    configurations = {
-        "Debug": "Runner/DebugProfile.entitlements",
-        "Profile": "Runner/DebugProfile.entitlements",
-        "Release": "Runner/Release.entitlements",
-    }
-
-    for configuration, entitlement_path in configurations.items():
-        # Match only the Runner target's configuration. Flutter's template
-        # references Runner/Configs/AppInfo.xcconfig in these three blocks.
-        pattern = re.compile(
-            rf"(?P<head>[0-9A-Fa-f]+ /\* {configuration} \*/ = \{{\s*"
-            rf"isa = XCBuildConfiguration;\s*"
-            rf"baseConfigurationReference = [^;]*AppInfo\.xcconfig[^;]*;\s*"
-            rf"buildSettings = \{{)"
-            rf"(?P<settings>.*?)"
-            rf"(?P<tail>\n\s*\}};\s*name = {configuration};\s*\}})",
-            flags=re.DOTALL,
-        )
-
-        def update_settings(match: re.Match[str]) -> str:
-            settings = match.group("settings")
-            assignment = f"CODE_SIGN_ENTITLEMENTS = {entitlement_path};"
-            if re.search(r"(?m)^\s*CODE_SIGN_ENTITLEMENTS\s*=\s*[^;]+;", settings):
-                settings = re.sub(
-                    r"(?m)^(\s*)CODE_SIGN_ENTITLEMENTS\s*=\s*[^;]+;",
-                    lambda m: f"{m.group(1)}{assignment}",
-                    settings,
-                    count=1,
-                )
-            else:
-                settings = settings.rstrip() + f"\n\t\t\t\t{assignment}\n\t\t\t"
-            return match.group("head") + settings + match.group("tail")
-
-        text, count = pattern.subn(update_settings, text, count=1)
-        if count != 1:
-            raise RuntimeError(
-                f"Не удалось настроить CODE_SIGN_ENTITLEMENTS для Runner ({configuration}). "
-                "Ожидался стандартный Flutter Xcode project."
-            )
-
-    project.write_text(text, encoding="utf-8")
-    print("Xcode: entitlement-файлы явно подключены для Debug/Profile/Release.")
+        print(f"Разрешение выбора файлов добавлено: {filename}")
 
 
 def add_plist_bool(path: Path, key: str) -> None:
@@ -239,6 +180,53 @@ def set_android_target() -> None:
         manifest.write_text(text, encoding="utf-8")
 
 
+def set_macos_code_sign_entitlements(project: Path) -> None:
+    """Bind the Runner app target to its Debug and Release entitlement files."""
+    if not project.exists():
+        print(f"Предупреждение: Xcode project не найден: {project}")
+        return
+
+    text = project.read_text(encoding="utf-8")
+    pattern = re.compile(
+        r"(isa = XCBuildConfiguration;\s*buildSettings = \{)(.*?)(\};\s*name = (Debug|Release|Profile);)",
+        flags=re.DOTALL,
+    )
+
+    def update_config(match: re.Match[str]) -> str:
+        settings = match.group(2)
+        config_name = match.group(4)
+        bundle_match = re.search(r"PRODUCT_BUNDLE_IDENTIFIER = ([^;]+);", settings)
+        if bundle_match is None:
+            return match.group(0)
+        bundle_id = bundle_match.group(1).strip()
+        if "RunnerTests" in bundle_id or ".RunnerTests" in bundle_id:
+            return match.group(0)
+
+        entitlement_file = (
+            "Runner/DebugProfile.entitlements"
+            if config_name == "Debug"
+            else "Runner/Release.entitlements"
+        )
+        entitlement_line = f"CODE_SIGN_ENTITLEMENTS = {entitlement_file};"
+        if re.search(r"CODE_SIGN_ENTITLEMENTS\s*=\s*[^;]+;", settings):
+            settings = re.sub(
+                r"CODE_SIGN_ENTITLEMENTS\s*=\s*[^;]+;",
+                entitlement_line,
+                settings,
+                count=1,
+            )
+        else:
+            settings = settings.rstrip() + "\n\t\t\t\t" + entitlement_line + "\n"
+        return match.group(1) + settings + match.group(3)
+
+    updated, count = pattern.subn(update_config, text)
+    project.write_text(updated, encoding="utf-8")
+    if count == 0:
+        print("Предупреждение: не удалось автоматически проверить Xcode build settings.")
+    else:
+        print("Настройки подписи macOS привязаны к файлам entitlements.")
+
+
 def set_macos_target() -> None:
     project = ROOT / "macos" / "Runner.xcodeproj" / "project.pbxproj"
 
@@ -256,6 +244,7 @@ def set_macos_target() -> None:
         project.write_text(text, encoding="utf-8")
 
     info = ROOT / "macos" / "Runner" / "Info.plist"
+
     if info.exists():
         text = info.read_text(encoding="utf-8")
         text = re.sub(
@@ -265,10 +254,19 @@ def set_macos_target() -> None:
         )
         info.write_text(text, encoding="utf-8")
 
-    # Do this after Flutter generates/copies the macOS scaffold so the files
-    # used by the actual Xcode target—not a temporary template—are updated.
+    # Явно связываем Runner target с нужными файлами разрешений и
+    # записываем разрешения в Debug/Profile и Release entitlements.
+    set_macos_code_sign_entitlements(project)
     ensure_macos_file_picker_entitlements(ROOT)
-    ensure_macos_code_sign_entitlements(ROOT)
+
+    # Сохраняем разрешение на доступ к папке Movies,
+    # если оно требуется существующей конфигурации проекта.
+    for name in ("DebugProfile.entitlements", "Release.entitlements"):
+        entitlements = ROOT / "macos" / "Runner" / name
+        add_plist_bool(
+            entitlements,
+            "com.apple.security.assets.movies.read-write",
+        )
 
 
 def set_windows_title() -> None:
