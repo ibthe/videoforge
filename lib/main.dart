@@ -102,7 +102,8 @@ enum ExportProfile {
   balanced,
   compact,
   youtube1080,
-  lossless;
+  lossless,
+  custom;
 
   String get title => switch (this) {
         ExportProfile.highQuality => 'Высокое качество',
@@ -110,6 +111,7 @@ enum ExportProfile {
         ExportProfile.compact => 'Компактный размер',
         ExportProfile.youtube1080 => 'YouTube 1080p',
         ExportProfile.lossless => 'Без потерь — новое кодирование',
+        ExportProfile.custom => 'Мой профиль',
       };
 
   String get description => switch (this) {
@@ -118,6 +120,7 @@ enum ExportProfile {
         ExportProfile.compact => 'Меньше места на диске, заметнее потери качества.',
         ExportProfile.youtube1080 => 'MP4 до 1080p с сохранением пропорций.',
         ExportProfile.lossless => 'FFV1 в MKV: новое кодирование видео без потерь. Файл может быть значительно больше; не все платформы принимают этот формат.',
+        ExportProfile.custom => 'Пользовательские настройки кодирования. Настройте CRF и скорость в конструкторе профиля.',
       };
 
   int get crf => switch (this) {
@@ -126,6 +129,7 @@ enum ExportProfile {
         ExportProfile.compact => 25,
         ExportProfile.youtube1080 => 20,
         ExportProfile.lossless => 0,
+        ExportProfile.custom => 20,
       };
 
   String get preset => this == ExportProfile.highQuality ? 'slow' : 'medium';
@@ -148,6 +152,11 @@ class VideoJob {
   String? outputPath;
   int? outputBytes;
   String? error;
+  String? metadataJson;
+  String publishTitle = '';
+  String publishDescription = '';
+  String publishTags = '';
+  String publishNotes = '';
 }
 
 class EncoderHomePage extends StatefulWidget {
@@ -182,6 +191,10 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   double _currentMediaSeconds = 0;
   double _currentDurationSeconds = 0;
   double _currentSpeed = 0;
+  int _customCrf = 20;
+  String _customPreset = 'medium';
+  final List<String> _diagnosticLog = <String>[];
+  final List<Map<String, Object?>> _exportHistory = <Map<String, Object?>>[];
 
   String _status = 'Подготавливаем папку для результатов…';
   String? _initializationError;
@@ -189,6 +202,9 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   static const _prefOutputDirectory = 'videoforge.outputDirectory';
   static const _prefProfile = 'videoforge.exportProfile';
   static const _prefQueue = 'videoforge.queue';
+  static const _prefCustomCrf = 'videoforge.customCrf';
+  static const _prefCustomPreset = 'videoforge.customPreset';
+  static const _prefHistory = 'videoforge.exportHistory';
   SharedPreferences? _preferences;
 
   @override
@@ -200,12 +216,23 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   Future<void> _prepareOutputDirectory() async {
     try {
       _preferences = await SharedPreferences.getInstance();
+      _customCrf = _preferences?.getInt(_prefCustomCrf) ?? 20;
+      _customPreset = _preferences?.getString(_prefCustomPreset) ?? 'medium';
       final savedProfile = _preferences?.getString(_prefProfile);
       if (savedProfile != null) {
         _profile = ExportProfile.values.firstWhere(
           (profile) => profile.name == savedProfile,
           orElse: () => ExportProfile.balanced,
         );
+      }
+      final savedHistory = _preferences?.getString(_prefHistory);
+      if (savedHistory != null && savedHistory.isNotEmpty) {
+        try {
+          final decodedHistory = jsonDecode(savedHistory);
+          if (decodedHistory is List) {
+            _exportHistory.addAll(decodedHistory.whereType<Map>().map((item) => Map<String, Object?>.from(item)));
+          }
+        } catch (_) { /* Ignore corrupted history without blocking startup. */ }
       }
       final savedQueue = _preferences?.getString(_prefQueue);
       if (savedQueue != null && savedQueue.isNotEmpty) {
@@ -314,6 +341,11 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
             ? (entry['outputBytes'] as num).toInt()
             : null;
         job.error = entry['error'] is String ? entry['error'] as String : null;
+        job.metadataJson = entry['metadataJson'] is String ? entry['metadataJson'] as String : null;
+        job.publishTitle = entry['publishTitle'] is String ? entry['publishTitle'] as String : '';
+        job.publishDescription = entry['publishDescription'] is String ? entry['publishDescription'] as String : '';
+        job.publishTags = entry['publishTags'] is String ? entry['publishTags'] as String : '';
+        job.publishNotes = entry['publishNotes'] is String ? entry['publishNotes'] as String : '';
         _jobs.add(job);
       }
     } catch (_) {
@@ -326,6 +358,8 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       final prefs = _preferences ?? await SharedPreferences.getInstance();
       _preferences = prefs;
       await prefs.setString(_prefProfile, _profile.name);
+      await prefs.setInt(_prefCustomCrf, _customCrf);
+      await prefs.setString(_prefCustomPreset, _customPreset);
       final output = _outputDirectory;
       if (output != null) await prefs.setString(_prefOutputDirectory, output.path);
       final queue = _jobs.map((job) => <String, Object?>{
@@ -335,8 +369,14 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
         'outputPath': job.outputPath,
         'outputBytes': job.outputBytes,
         'error': job.error,
+        'metadataJson': job.metadataJson,
+        'publishTitle': job.publishTitle,
+        'publishDescription': job.publishDescription,
+        'publishTags': job.publishTags,
+        'publishNotes': job.publishNotes,
       }).toList(growable: false);
       await prefs.setString(_prefQueue, jsonEncode(queue));
+      await prefs.setString(_prefHistory, jsonEncode(_exportHistory.take(500).toList()));
     } catch (_) {
       if (mounted) _showMessage('Не удалось сохранить настройки приложения.');
     }
@@ -622,10 +662,16 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
           if (result.success) {
             final outputFile = File(outputPath);
             final outputBytes = await outputFile.length();
+            final verified = await _probeJson(outputPath);
+            final exportedAt = DateTime.now().toIso8601String();
+            _diagnosticLog.add('$exportedAt OK: ${job.name} -> ${p.basename(outputPath)} (${_formatBytes(outputBytes)})${verified == null ? ' — метаданные результата прочитать не удалось' : ''}');
+            _exportHistory.insert(0, <String, Object?>{'date': exportedAt, 'source': job.path, 'sourceName': job.name, 'output': outputPath, 'sourceBytes': job.bytes, 'outputBytes': outputBytes, 'profile': _profile.name});
+            if (_exportHistory.length > 500) _exportHistory.removeRange(500, _exportHistory.length);
             setState(() {
               job.status = JobStatus.done;
               job.outputPath = outputPath;
               job.outputBytes = outputBytes;
+              if (verified != null) job.metadataJson = verified;
               job.error = null;
             });
             completed++;
@@ -638,6 +684,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                 job.error = null;
               });
             } else {
+              _diagnosticLog.add('${DateTime.now().toIso8601String()} ERROR: ${job.name}: ${result.message ?? 'Неизвестная ошибка FFmpeg.'}');
               setState(() {
                 job.status = JobStatus.failed;
                 job.error = result.message ?? 'Неизвестная ошибка FFmpeg.';
@@ -660,6 +707,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
               job.error = null;
             });
           } else {
+            _diagnosticLog.add('${DateTime.now().toIso8601String()} ERROR: ${job.name}: $error');
             setState(() {
               job.status = JobStatus.failed;
               job.error = error.toString();
@@ -693,6 +741,191 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
               ? 'Готово! Файлы сохранены в Processed_New.'
               : 'Обработка завершена. Успешно: $completed, с ошибкой: $failed.',
     );
+  }
+
+  Future<String?> _probeJson(String path) async {
+    try {
+      final probe = await FFprobeKit.getMediaInformation(path);
+      final info = await probe.getMediaInformation();
+      if (info == null) return null;
+      final dynamic raw = info.getAllProperties();
+      return const JsonEncoder.withIndent('  ').convert(raw ?? <String, Object?>{'filename': path, 'duration': info.getDuration(), 'bitrate': info.getBitrate(), 'format': info.getFormat()});
+    } catch (error) {
+      _diagnosticLog.add('${DateTime.now().toIso8601String()} FFprobe error for $path: $error');
+      return null;
+    }
+  }
+
+  Future<void> _analyzeQueuedVideos() async {
+    if (_jobs.isEmpty) return;
+    var analyzed = 0;
+    for (final job in _jobs) {
+      final result = await _probeJson(job.path);
+      if (result != null) {
+        job.metadataJson = result;
+        analyzed++;
+      } else {
+        _diagnosticLog.add('${DateTime.now().toIso8601String()} Metadata unavailable: ${job.path}');
+      }
+    }
+    await _persistState();
+    if (!mounted) return;
+    setState(() {});
+    _showMessage('Анализ завершён: $analyzed из ${_jobs.length} файлов. Нажмите на значок сведений у файла для просмотра.');
+  }
+
+  Future<void> _configureCustomProfile() async {
+    var crf = _customCrf.toDouble();
+    var preset = _customPreset;
+    final result = await showDialog<bool>(context: context, builder: (context) => StatefulBuilder(builder: (context, setDialogState) => AlertDialog(
+      title: const Text('Конструктор профиля'),
+      content: SizedBox(width: 420, child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        const Text('CRF: ниже — выше качество и обычно больше размер. Доступный диапазон этого профиля: 0–35.'),
+        Slider(value: crf, min: 0, max: 35, divisions: 35, label: crf.round().toString(), onChanged: (v) => setDialogState(() => crf = v)),
+        Text('CRF ${crf.round()}'),
+        const SizedBox(height: 12),
+        const Text('Скорость кодирования'),
+        const SizedBox(height: 6),
+        DropdownButtonFormField<String>(value: preset, items: const <DropdownMenuItem<String>>[
+          DropdownMenuItem(value: 'ultrafast', child: Text('Очень быстро')), DropdownMenuItem(value: 'fast', child: Text('Быстро')), DropdownMenuItem(value: 'medium', child: Text('Сбалансировано')), DropdownMenuItem(value: 'slow', child: Text('Медленно, эффективнее')),
+        ], onChanged: (v) { if (v != null) setDialogState(() => preset = v); }),
+        const SizedBox(height: 8),
+        const Text('Этот профиль использует H.264 в MP4. CRF 0 зависит от сборки кодека и не гарантируется как lossless; для строгого режима без потерь выбирайте FFV1.', style: TextStyle(fontSize: 12)),
+      ])),
+      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Отмена')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Сохранить профиль'))],
+    )));
+    if (result != true || !mounted) return;
+    setState(() { _customCrf = crf.round(); _customPreset = preset; _profile = ExportProfile.custom; });
+    await _persistState();
+    _showMessage('Пользовательский профиль сохранён.');
+  }
+
+  Future<void> _showVideoDetails(VideoJob job) async {
+    final data = job.metadataJson ?? await _probeJson(job.path);
+    if (data != null) job.metadataJson = data;
+    if (!mounted) return;
+    await showDialog<void>(context: context, builder: (context) => AlertDialog(
+      title: Text(job.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+      content: SizedBox(width: 560, child: SingleChildScrollView(child: SelectableText(data ?? 'Не удалось прочитать метаданные видео.\nПроверьте доступ к файлу и поддержку FFprobe.', style: const TextStyle(fontFamily: 'monospace', fontSize: 12)))),
+      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть'))],
+    ));
+  }
+
+  Future<void> _openPublishingManager() async {
+    if (_jobs.isEmpty) return;
+    var selected = _jobs.first;
+    final title = TextEditingController(text: selected.publishTitle);
+    final description = TextEditingController(text: selected.publishDescription);
+    final tags = TextEditingController(text: selected.publishTags);
+    final notes = TextEditingController(text: selected.publishNotes);
+    await showDialog<void>(context: context, builder: (context) => StatefulBuilder(builder: (context, setDialogState) => AlertDialog(
+      title: const Text('Менеджер публикаций'),
+      content: SizedBox(width: 560, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+        DropdownButtonFormField<VideoJob>(value: selected, isExpanded: true, decoration: const InputDecoration(labelText: 'Видео'), items: _jobs.map((j) => DropdownMenuItem(value: j, child: Text(j.name, overflow: TextOverflow.ellipsis))).toList(), onChanged: (job) { if (job == null) return; setDialogState(() { selected = job; title.text = job.publishTitle; description.text = job.publishDescription; tags.text = job.publishTags; notes.text = job.publishNotes; }); }),
+        const SizedBox(height: 10), TextField(controller: title, decoration: const InputDecoration(labelText: 'Название публикации')),
+        const SizedBox(height: 10), TextField(controller: description, maxLines: 3, decoration: const InputDecoration(labelText: 'Описание')),
+        const SizedBox(height: 10), TextField(controller: tags, decoration: const InputDecoration(labelText: 'Теги (через запятую)')),
+        const SizedBox(height: 10), TextField(controller: notes, maxLines: 2, decoration: const InputDecoration(labelText: 'Заметки / результаты теста')),
+        const SizedBox(height: 8), const Text('Сохраняются локально в приложении. Статистика платформ сюда автоматически не импортируется.', style: TextStyle(fontSize: 12)),
+      ]))),
+      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть')), FilledButton(onPressed: () async { selected.publishTitle = title.text; selected.publishDescription = description.text; selected.publishTags = tags.text; selected.publishNotes = notes.text; await _persistState(); if (context.mounted) Navigator.pop(context); if (mounted) _showMessage('Вариант публикации сохранён.'); }, child: const Text('Сохранить'))],
+    )));
+    title.dispose(); description.dispose(); tags.dispose(); notes.dispose();
+  }
+
+  Future<void> _openHistory() async {
+    await showDialog<void>(context: context, builder: (context) => AlertDialog(
+      title: const Text('История экспорта'),
+      content: SizedBox(width: 600, child: _exportHistory.isEmpty ? const Text('История пока пуста.') : ListView(shrinkWrap: true, children: _exportHistory.map((entry) {
+        final sourceBytes = entry['sourceBytes'] is num ? (entry['sourceBytes'] as num).toInt() : 0;
+        final outputBytes = entry['outputBytes'] is num ? (entry['outputBytes'] as num).toInt() : 0;
+        return ListTile(
+          leading: const Icon(Icons.check_circle_outline, color: Color(0xFFB5F36D)),
+          title: Text('${entry['sourceName'] ?? 'Видео'}', maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Text('${entry['date'] ?? ''}\n${_formatBytes(sourceBytes)} → ${_formatBytes(outputBytes)} · ${entry['profile'] ?? ''}\n${entry['output'] ?? ''}'),
+          isThreeLine: true,
+        );
+      }).toList())),
+      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть'))],
+    ));
+  }
+
+  Future<File?> _extractPreviewFrame(String path) async {
+    try {
+      final duration = await _getMediaDuration(path);
+      final seekSeconds = duration > 1 ? duration * 0.5 : 0.0;
+      final temp = await getTemporaryDirectory();
+      final output = File(p.join(temp.path, 'videoforge_preview_${DateTime.now().microsecondsSinceEpoch}.jpg'));
+      final session = await FFmpegKit.executeWithArguments(<String>[
+        '-hide_banner', '-loglevel', 'error', '-y', '-ss', seekSeconds.toStringAsFixed(3), '-i', path,
+        '-frames:v', '1', '-vf', 'scale=640:-2', '-q:v', '3', output.path,
+      ]);
+      final code = await session.getReturnCode();
+      if (ReturnCode.isSuccess(code) && await output.exists() && await output.length() > 0) return output;
+      return null;
+    } catch (error) {
+      _diagnosticLog.add('${DateTime.now().toIso8601String()} Preview frame failed for $path: $error');
+      return null;
+    }
+  }
+
+  Future<void> _compareLatestOutput() async {
+    final completed = _jobs.where((j) => j.status == JobStatus.done && j.outputPath != null).toList();
+    if (completed.isEmpty) { _showMessage('Нет готового файла для проверки.'); return; }
+    final job = completed.last;
+    _showMessage('Подготавливаем кадры для сравнения…');
+    final sourceFrame = await _extractPreviewFrame(job.path);
+    final outputFrame = await _extractPreviewFrame(job.outputPath!);
+    final source = await _probeJson(job.path);
+    final output = await _probeJson(job.outputPath!);
+    if (!mounted) return;
+    await showDialog<void>(context: context, builder: (context) => AlertDialog(
+      title: const Text('Сравнение исходника и результата'),
+      content: SizedBox(width: 760, child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        Text(job.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        LayoutBuilder(builder: (context, constraints) {
+          final vertical = constraints.maxWidth < 520;
+          final sourcePane = Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+            const Text('ОРИГИНАЛ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.2)), const SizedBox(height: 6),
+            if (sourceFrame != null) ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.file(sourceFrame, fit: BoxFit.contain, width: double.infinity)) else const AspectRatio(aspectRatio: 16 / 9, child: Center(child: Text('Кадр недоступен'))),
+            const SizedBox(height: 6), Text(_formatBytes(job.bytes), style: const TextStyle(fontSize: 12)),
+          ]);
+          final outputPane = Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+            const Text('РЕЗУЛЬТАТ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.2)), const SizedBox(height: 6),
+            if (outputFrame != null) ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.file(outputFrame, fit: BoxFit.contain, width: double.infinity)) else const AspectRatio(aspectRatio: 16 / 9, child: Center(child: Text('Кадр недоступен'))),
+            const SizedBox(height: 6), Text(job.outputBytes == null ? 'Размер неизвестен' : _formatBytes(job.outputBytes!), style: const TextStyle(fontSize: 12)),
+          ]);
+          return vertical ? Column(children: <Widget>[sourcePane, const SizedBox(height: 18), outputPane]) : Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Expanded(child: sourcePane), const SizedBox(width: 14), Expanded(child: outputPane)]);
+        }),
+        const Divider(height: 24),
+        Text('Изменение размера: ${_sizeChangeLabel(job).isEmpty ? 'не рассчитано' : _sizeChangeLabel(job)}'),
+        const SizedBox(height: 8), const Text('Кадры показывают только одну точку примерно в середине видео. Это визуальная проверка, а не математическое доказательство отсутствия потерь. Для FFV1 исходные декодированные кадры должны сохраняться без потерь.', style: TextStyle(fontSize: 12)),
+        ExpansionTile(title: const Text('Технические сведения'), children: <Widget>[
+          const Align(alignment: Alignment.centerLeft, child: Text('Исходник', style: TextStyle(fontWeight: FontWeight.bold))),
+          SelectableText(source ?? 'Метаданные исходника недоступны.'),
+          const Divider(),
+          const Align(alignment: Alignment.centerLeft, child: Text('Результат', style: TextStyle(fontWeight: FontWeight.bold))),
+          SelectableText(output ?? 'Метаданные результата недоступны.'),
+        ]),
+      ]))),
+      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть'))],
+    ));
+  }
+
+  Future<void> _exportDiagnostics() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File(p.join(dir.path, 'VideoForge_diagnostics.txt'));
+      final lines = <String>[
+        'VideoForge diagnostics', 'Generated: ${DateTime.now().toIso8601String()}', 'Platform: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}', 'Profile: ${_profile.name}', 'Output: ${_outputDirectory?.path ?? '(none)'}', 'Queue jobs: ${_jobs.length}', '', 'Recent events:', ..._diagnosticLog.take(500), '', 'Jobs:', ..._jobs.map((j) => '${j.status.name} | ${j.name} | ${j.path} | ${j.error ?? ''}'),
+      ];
+      await file.writeAsString(lines.join('\n'), flush: true);
+      if (!mounted) return;
+      await SharePlus.instance.share(ShareParams(title: 'VideoForge diagnostics', text: 'Диагностический отчёт VideoForge', files: <XFile>[XFile(file.path)]));
+    } catch (error) {
+      if (mounted) _showMessage('Не удалось подготовить отчёт: $error');
+    }
   }
 
   Future<double> _getMediaDuration(String inputPath) async {
@@ -747,9 +980,9 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
         '-c:v',
         'libx264',
         '-preset',
-        profile.preset,
+        profile == ExportProfile.custom ? _customPreset : profile.preset,
         '-crf',
-        profile.crf.toString(),
+        (profile == ExportProfile.custom ? _customCrf : profile.crf).toString(),
         '-pix_fmt',
         'yuv420p',
         '-c:a',
@@ -1047,6 +1280,13 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                           const SizedBox(width: 10),
                           Expanded(child: _metricCard('Ошибки', '$failedCount', Icons.error_outline_rounded, color: const Color(0xFFFF8178))),
                         ]),
+                        const SizedBox(height: 12),
+                        Wrap(spacing: 8, runSpacing: 8, children: <Widget>[
+                          OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _analyzeQueuedVideos, icon: const Icon(Icons.manage_search_rounded), label: const Text('Анализ видео')),
+                          OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _openHistory, icon: const Icon(Icons.history_rounded), label: const Text('История экспорта')),
+                          OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _openPublishingManager, icon: const Icon(Icons.campaign_outlined), label: const Text('Публикации')),
+                          OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _compareLatestOutput, icon: const Icon(Icons.compare_arrows_rounded), label: const Text('Проверить результат')),
+                        ]),
                         const SizedBox(height: 18),
                         _buildQueueCard(doneCount),
                         if (_isEncoding) ...<Widget>[
@@ -1178,7 +1418,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       const SizedBox(height: 18),
       ...ExportProfile.values.map((profile) {
         final selected = _profile == profile;
-        final icon = switch (profile) { ExportProfile.highQuality => Icons.high_quality_rounded, ExportProfile.balanced => Icons.balance_rounded, ExportProfile.compact => Icons.sd_storage_rounded, ExportProfile.youtube1080 => Icons.smart_display_rounded, ExportProfile.lossless => Icons.verified_rounded };
+        final icon = switch (profile) { ExportProfile.highQuality => Icons.high_quality_rounded, ExportProfile.balanced => Icons.balance_rounded, ExportProfile.compact => Icons.sd_storage_rounded, ExportProfile.youtube1080 => Icons.smart_display_rounded, ExportProfile.lossless => Icons.verified_rounded, ExportProfile.custom => Icons.tune_rounded };
         return Padding(padding: const EdgeInsets.only(bottom: 8), child: Material(color: selected ? const Color(0xFFB5F36D).withValues(alpha: 0.09) : const Color(0xFF131510), borderRadius: BorderRadius.circular(15), child: InkWell(borderRadius: BorderRadius.circular(15), onTap: _isEncoding ? null : () { setState(() => _profile = profile); _persistState(); }, child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(borderRadius: BorderRadius.circular(15), border: Border.all(color: selected ? const Color(0xFFB5F36D) : const Color(0xFF30342B))), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
           Icon(icon, color: selected ? const Color(0xFFB5F36D) : const Color(0xFF858B7D), size: 21), const SizedBox(width: 11), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text(profile.title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: selected ? const Color(0xFFF3F4EE) : const Color(0xFFCFD2C9))), const SizedBox(height: 4), Text(profile.description, style: const TextStyle(fontSize: 11, height: 1.35, color: Color(0xFF858B7D)))])), const SizedBox(width: 8), Icon(selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, color: selected ? const Color(0xFFB5F36D) : const Color(0xFF505548), size: 19),
         ])))));
@@ -1215,6 +1455,8 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
         Wrap(spacing: 10, runSpacing: 10, children: <Widget>[
           SizedBox(width: compact ? double.infinity : 205, child: FilledButton.icon(onPressed: _isEncoding || _isPreparing ? null : _pickVideos, icon: const Icon(Icons.add_rounded), label: Text(_jobs.isEmpty ? 'Добавить видео' : 'Добавить ещё'))),
           if (_jobs.isNotEmpty) OutlinedButton.icon(onPressed: _isEncoding ? null : _encodeAll, icon: const Icon(Icons.play_arrow_rounded), label: const Text('Запустить очередь')),
+          OutlinedButton.icon(onPressed: _isEncoding ? null : _configureCustomProfile, icon: const Icon(Icons.tune_rounded), label: const Text('Мой профиль')),
+          OutlinedButton.icon(onPressed: _isEncoding ? null : _exportDiagnostics, icon: const Icon(Icons.receipt_long_outlined), label: const Text('Диагностика')),
         ]),
       ]);
       if (compact) return intro;
@@ -1261,6 +1503,8 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                       fontSize: 12,
                     ),
                   ),
+                  const SizedBox(height: 7),
+                  Text('Оценка для выбранного профиля: ${_formatBytes((_jobs.fold<int>(0, (sum, job) => sum + job.bytes) * (_profile.isLossless ? 4.0 : _profile == ExportProfile.compact ? 0.65 : 1.1)).round())} (очень приблизительно)', style: const TextStyle(color: Color(0xFF858B7D), fontSize: 11)),
                   const SizedBox(height: 7),
                   Text(
                     Platform.isWindows
@@ -1469,6 +1713,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                 ],
               ),
             ),
+            IconButton(tooltip: 'Анализ и сведения о видео', onPressed: () => _showVideoDetails(job), icon: const Icon(Icons.info_outline_rounded)),
             if (job.status == JobStatus.done && job.outputPath != null)
               Builder(
                 builder: (buttonContext) => IconButton(
