@@ -72,13 +72,15 @@ enum ExportProfile {
   highQuality,
   balanced,
   compact,
-  youtube1080;
+  youtube1080,
+  lossless;
 
   String get title => switch (this) {
         ExportProfile.highQuality => 'Высокое качество',
         ExportProfile.balanced => 'Сбалансированный',
         ExportProfile.compact => 'Компактный размер',
         ExportProfile.youtube1080 => 'YouTube 1080p',
+        ExportProfile.lossless => 'Без потерь — новое кодирование',
       };
 
   String get description => switch (this) {
@@ -86,6 +88,7 @@ enum ExportProfile {
         ExportProfile.balanced => 'Рекомендуемый баланс качества и размера.',
         ExportProfile.compact => 'Меньше места на диске, заметнее потери качества.',
         ExportProfile.youtube1080 => 'MP4 до 1080p с сохранением пропорций.',
+        ExportProfile.lossless => 'FFV1 в MKV: новое кодирование видео без потерь. Файл может быть значительно больше; не все платформы принимают этот формат.',
       };
 
   int get crf => switch (this) {
@@ -93,10 +96,13 @@ enum ExportProfile {
         ExportProfile.balanced => 20,
         ExportProfile.compact => 25,
         ExportProfile.youtube1080 => 20,
+        ExportProfile.lossless => 0,
       };
 
   String get preset => this == ExportProfile.highQuality ? 'slow' : 'medium';
   bool get limitTo1080p => this == ExportProfile.youtube1080;
+  bool get isLossless => this == ExportProfile.lossless;
+  String get outputExtension => isLossless ? 'mkv' : 'mp4';
 }
 
 enum JobStatus { queued, encoding, done, failed }
@@ -496,21 +502,37 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       '0',
       '-map_chapters',
       '0',
-      '-c:v',
-      'libx264',
-      '-preset',
-      profile.preset,
-      '-crf',
-      profile.crf.toString(),
-      '-pix_fmt',
-      'yuv420p',
-      '-c:a',
-      'aac',
-      '-b:a',
-      '192k',
-      '-movflags',
-      '+faststart',
     ];
+
+    if (profile.isLossless) {
+      // FFV1 is a mathematically lossless video codec. MKV supports FFV1
+      // and a wide range of existing audio codecs; copying audio avoids
+      // introducing a new lossy audio encode.
+      args.addAll([
+        '-c:v', 'ffv1',
+        '-level', '3',
+        '-coder', '1',
+        '-context', '1',
+        '-c:a', 'copy',
+      ]);
+    } else {
+      args.addAll([
+        '-c:v',
+        'libx264',
+        '-preset',
+        profile.preset,
+        '-crf',
+        profile.crf.toString(),
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+        '-movflags',
+        '+faststart',
+      ]);
+    }
 
     if (profile.limitTo1080p) {
       args.addAll([
@@ -623,13 +645,14 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     final base = p.basenameWithoutExtension(inputName).trim();
     final safeBase = base.isEmpty ? 'video' : base;
 
-    var candidate = p.join(directory.path, '$safeBase.mp4');
+    final extension = _profile.outputExtension;
+    var candidate = p.join(directory.path, '$safeBase.$extension');
     var suffix = 2;
 
     while (await File(candidate).exists()) {
       candidate = p.join(
         directory.path,
-        '${safeBase}_$suffix.mp4',
+        '${safeBase}_$suffix.$extension',
       );
       suffix++;
     }
