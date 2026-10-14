@@ -322,7 +322,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       return;
     }
     try {
-      final selectedPath = await FilePicker.platform.getDirectoryPath(
+      final selectedPath = await FilePicker.getDirectoryPath(
         dialogTitle: 'Выберите папку для готовых видео',
       );
       if (selectedPath == null || selectedPath.trim().isEmpty) return;

@@ -12,6 +12,13 @@ import sys
 import tempfile
 from pathlib import Path
 
+# GitHub Actions on Windows may use a legacy code page (e.g. cp1252).
+# Keep Russian diagnostic messages from crashing the platform preparation script.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT = Path(__file__).resolve().parents[1]
 PLATFORMS = ("android", "ios", "macos", "windows")
 
