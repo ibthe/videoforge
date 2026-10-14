@@ -124,6 +124,35 @@ jobs:
         with:
           python-version: '3.13'
 
+      - name: Install Android NDK with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "sdkmanager not found at: $SDKMANAGER" >&2
+            exit 1
+          fi
+
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          NDK_VERSION="28.2.13676358"
+          for attempt in 1 2 3; do
+            echo "Installing Android NDK $NDK_VERSION (attempt $attempt/3)"
+            if "$SDKMANAGER" --install "ndk;$NDK_VERSION"; then
+              test -d "$SDK_ROOT/ndk/$NDK_VERSION"
+              echo "Android NDK $NDK_VERSION installed."
+              exit 0
+            fi
+
+            echo "NDK installation failed; removing incomplete download before retry."
+            rm -rf "$SDK_ROOT/ndk/$NDK_VERSION" "$SDK_ROOT/.temp" "$HOME/.android/cache"
+            if [ "$attempt" -lt 3 ]; then sleep 10; fi
+          done
+
+          echo "Could not install Android NDK $NDK_VERSION after 3 attempts." >&2
+          exit 1
+
       - name: Generate platform project and resolve packages
         run: |
           python3 scripts/prepare_platforms.py
