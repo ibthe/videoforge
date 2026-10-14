@@ -1,5 +1,6 @@
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cross_file/cross_file.dart';
@@ -12,6 +13,7 @@ import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -157,6 +159,11 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   String _status = 'Подготавливаем папку для результатов…';
   String? _initializationError;
 
+  static const _prefOutputDirectory = 'videoforge.outputDirectory';
+  static const _prefProfile = 'videoforge.exportProfile';
+  static const _prefQueue = 'videoforge.queue';
+  SharedPreferences? _preferences;
+
   @override
   void initState() {
     super.initState();
@@ -165,7 +172,22 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
 
   Future<void> _prepareOutputDirectory() async {
     try {
-      final directory = await _resolveOutputDirectory();
+      _preferences = await SharedPreferences.getInstance();
+      final savedProfile = _preferences?.getString(_prefProfile);
+      if (savedProfile != null) {
+        _profile = ExportProfile.values.firstWhere(
+          (profile) => profile.name == savedProfile,
+          orElse: () => ExportProfile.balanced,
+        );
+      }
+      final savedQueue = _preferences?.getString(_prefQueue);
+      if (savedQueue != null && savedQueue.isNotEmpty) {
+        _restoreQueue(savedQueue);
+      }
+      final savedOutput = _preferences?.getString(_prefOutputDirectory);
+      final directory = savedOutput != null && savedOutput.trim().isNotEmpty
+          ? Directory(savedOutput)
+          : await _resolveOutputDirectory();
       await directory.create(recursive: true);
 
       if (!mounted) return;
@@ -173,8 +195,12 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       setState(() {
         _outputDirectory = directory;
         _isPreparing = false;
-        _status = 'Готово к работе';
+        _status = _jobs.isEmpty
+            ? 'Готово к работе'
+            : 'Восстановлена очередь: ${_jobs.length} файл(ов)';
       });
+      await _validateRestoredQueue();
+      await _persistState();
     } catch (error) {
       try {
         final documents = await getApplicationDocumentsDirectory();
@@ -189,10 +215,14 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
         setState(() {
           _outputDirectory = fallback;
           _isPreparing = false;
-          _status = 'Готово к работе';
+          _status = _jobs.isEmpty
+              ? 'Готово к работе'
+              : 'Восстановлена очередь: ${_jobs.length} файл(ов)';
           _initializationError =
               'Основная папка недоступна. Используется папка приложения.';
         });
+        await _validateRestoredQueue();
+        await _persistState();
       } catch (fallbackError) {
         if (!mounted) return;
 
@@ -204,6 +234,168 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
         });
       }
     }
+  }
+
+  Future<void> _validateRestoredQueue() async {
+    var changed = false;
+    for (final job in _jobs) {
+      final sourceExists = await File(job.path).exists();
+      if (job.status == JobStatus.done) {
+        final outputExists = job.outputPath != null &&
+            await File(job.outputPath!).exists();
+        if (!outputExists) {
+          job.status = sourceExists ? JobStatus.queued : JobStatus.failed;
+          job.error = sourceExists
+              ? 'Готовый файл больше не найден. Задание можно выполнить повторно.'
+              : 'Исходный файл недоступен. Выберите его заново.';
+          changed = true;
+        }
+      } else if (!sourceExists) {
+        job.status = JobStatus.failed;
+        job.error = 'Исходный файл недоступен. Проверьте путь и права доступа.';
+        changed = true;
+      }
+    }
+    if (changed && mounted) {
+      setState(() {
+        _status = 'Очередь восстановлена; некоторые файлы требуют проверки';
+      });
+    }
+  }
+
+  void _restoreQueue(String encoded) {
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! List) return;
+      for (final entry in decoded) {
+        if (entry is! Map) continue;
+        final path = entry['path'];
+        final bytes = entry['bytes'];
+        if (path is! String || path.isEmpty || bytes is! num) continue;
+        final job = VideoJob(path: path, bytes: bytes.toInt());
+        final savedStatus = entry['status'];
+        // Interrupted encodes are safe to retry; never resume a partial output.
+        job.status = savedStatus == 'done' && entry['outputPath'] is String
+            ? JobStatus.done
+            : savedStatus == 'failed'
+                ? JobStatus.failed
+                : JobStatus.queued;
+        job.outputPath = entry['outputPath'] is String
+            ? entry['outputPath'] as String
+            : null;
+        job.outputBytes = entry['outputBytes'] is num
+            ? (entry['outputBytes'] as num).toInt()
+            : null;
+        job.error = entry['error'] is String ? entry['error'] as String : null;
+        _jobs.add(job);
+      }
+    } catch (_) {
+      // A corrupt saved queue must not prevent the app from opening.
+    }
+  }
+
+  Future<void> _persistState() async {
+    try {
+      final prefs = _preferences ?? await SharedPreferences.getInstance();
+      _preferences = prefs;
+      await prefs.setString(_prefProfile, _profile.name);
+      final output = _outputDirectory;
+      if (output != null) await prefs.setString(_prefOutputDirectory, output.path);
+      final queue = _jobs.map((job) => <String, Object?>{
+        'path': job.path,
+        'bytes': job.bytes,
+        'status': job.status.name == 'encoding' ? 'queued' : job.status.name,
+        'outputPath': job.outputPath,
+        'outputBytes': job.outputBytes,
+        'error': job.error,
+      }).toList(growable: false);
+      await prefs.setString(_prefQueue, jsonEncode(queue));
+    } catch (_) {
+      if (mounted) _showMessage('Не удалось сохранить настройки приложения.');
+    }
+  }
+
+  Future<void> _chooseOutputDirectory() async {
+    if (_isEncoding || _isPreparing) return;
+    if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) {
+      _showMessage('Выбор произвольной папки доступен в настольной версии. На мобильном устройстве используется папка приложения; готовое видео можно сохранить через «Поделиться».');
+      return;
+    }
+    try {
+      final selectedPath = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: 'Выберите папку для готовых видео',
+      );
+      if (selectedPath == null || selectedPath.trim().isEmpty) return;
+      final selected = Directory(selectedPath);
+      await selected.create(recursive: true);
+      // Verify that the selected folder is writable before saving it.
+      final probe = File(p.join(selected.path, '.videoforge_write_test'));
+      await probe.writeAsString('ok', flush: true);
+      await probe.delete();
+      if (!mounted) return;
+      setState(() {
+        _outputDirectory = selected;
+        _status = 'Папка результата изменена';
+      });
+      await _persistState();
+      _showMessage('Папка результата сохранена.');
+    } catch (error) {
+      if (mounted) {
+        _showMessage('Не удалось выбрать эту папку. Проверьте права доступа: $error');
+      }
+    }
+  }
+
+  Future<int?> _availableBytes(Directory directory) async {
+    // Disk-space probing is available through native shell tools on desktop.
+    // Mobile platforms do not expose a portable free-space API in this app.
+    try {
+      if (Platform.isMacOS || Platform.isLinux) {
+        final result = await Process.run('df', <String>['-Pk', directory.path]);
+        if (result.exitCode != 0) return null;
+        final lines = result.stdout.toString().trim().split('\n');
+        if (lines.length < 2) return null;
+        final fields = lines.last.trim().split(RegExp(r'\s+'));
+        if (fields.length < 4) return null;
+        return int.parse(fields[3]) * 1024;
+      }
+      if (Platform.isWindows) {
+        final root = p.rootPrefix(directory.path);
+        if (root.isEmpty) return null;
+        final drive = root.replaceAll(RegExp(r'[:\\/]'), '');
+        final result = await Process.run('powershell.exe', <String>[
+          '-NoProfile', '-Command', "(Get-PSDrive -Name '$drive').Free",
+        ]);
+        if (result.exitCode != 0) return null;
+        return int.tryParse(result.stdout.toString().trim());
+      }
+    } catch (_) {
+      return null;
+    }
+    return null;
+  }
+
+  Future<bool> _checkFreeSpace(List<VideoJob> pending) async {
+    final directory = _outputDirectory;
+    if (directory == null) return false;
+    final available = await _availableBytes(directory);
+    if (available == null) {
+      if (mounted && (Platform.isAndroid || Platform.isIOS)) {
+        _showMessage('Автоматическая проверка свободного места недоступна на этом устройстве.');
+      }
+      return true; // Unknown is a warning, not a hard block.
+    }
+    final inputBytes = pending.fold<int>(0, (sum, job) => sum + job.bytes);
+    final estimated = inputBytes * (_profile.isLossless ? 4 : 2) + 256 * 1024 * 1024;
+    if (available < estimated) {
+      final availableLabel = _formatBytes(available);
+      final requiredLabel = _formatBytes(estimated);
+      if (mounted) {
+        _showMessage('Может не хватить места: свободно $availableLabel, ориентировочно нужно до $requiredLabel. Освободите место или выберите другую папку.');
+      }
+      return false;
+    }
+    return true;
   }
 
   Future<Directory> _resolveOutputDirectory() async {
@@ -310,6 +502,8 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
           : 'Добавлено файлов: ${added.length}';
     });
 
+    if (added.isNotEmpty) await _persistState();
+
     if (unavailableCount > 0) {
       _showMessage('$unavailableCount файл(ов) недоступны. Проверьте путь и права доступа.');
     } else if (unsupportedCount > 0 && added.isEmpty) {
@@ -340,6 +534,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       _showMessage('Сначала выберите видео для кодирования.');
       return;
     }
+    if (!await _checkFreeSpace(pending)) return;
 
     setState(() {
       _isEncoding = true;
@@ -357,6 +552,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
         job.error = null;
       }
     });
+    await _persistState();
 
     var completed = 0;
     var failed = 0;
@@ -406,6 +602,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
               job.error = null;
             });
             completed++;
+            await _persistState();
           } else {
             await _deleteIfExists(outputPath);
             if (_cancelRequested) {
@@ -420,6 +617,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
               });
               failed++;
             }
+            await _persistState();
           }
         } catch (error) {
           _activeSessionId = null;
@@ -441,6 +639,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
             });
             failed++;
           }
+          await _persistState();
         }
       }
     } finally {
@@ -454,6 +653,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                   ? 'Готово! Успешно обработано: $completed'
                   : 'Завершено: $completed успешно, ошибок: $failed';
         });
+        await _persistState();
       }
     }
 
@@ -726,6 +926,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   void _removeJob(VideoJob job) {
     if (_isEncoding) return;
     setState(() => _jobs.remove(job));
+    _persistState();
   }
 
   void _showMessage(String message) {
@@ -971,7 +1172,10 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                   onSelected: _isEncoding
                       ? null
                       : (selected) {
-                          if (selected) setState(() => _profile = profile);
+                          if (selected) {
+                            setState(() => _profile = profile);
+                            _persistState();
+                          }
                         },
                 );
               }).toList(),
@@ -1149,13 +1353,21 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                 ],
               ),
             ),
-            IconButton(
-              tooltip: Platform.isWindows || Platform.isMacOS
-                  ? 'Открыть папку'
-                  : 'Как сохранить результат',
-              onPressed:
-                  _outputDirectory == null ? null : _openOutputFolder,
-              icon: const Icon(Icons.open_in_new_rounded),
+            Column(
+              children: <Widget>[
+                IconButton(
+                  tooltip: 'Выбрать папку результата',
+                  onPressed: _isEncoding || _isPreparing ? null : _chooseOutputDirectory,
+                  icon: const Icon(Icons.drive_folder_upload_outlined),
+                ),
+                IconButton(
+                  tooltip: Platform.isWindows || Platform.isMacOS
+                      ? 'Открыть папку'
+                      : 'Как сохранить результат',
+                  onPressed: _outputDirectory == null ? null : _openOutputFolder,
+                  icon: const Icon(Icons.open_in_new_rounded),
+                ),
+              ],
             ),
           ],
         ),
@@ -1229,7 +1441,10 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton.icon(
-                  onPressed: () => setState(_jobs.clear),
+                  onPressed: () {
+                    setState(_jobs.clear);
+                    _persistState();
+                  },
                   icon: const Icon(
                     Icons.delete_outline_rounded,
                     size: 18,

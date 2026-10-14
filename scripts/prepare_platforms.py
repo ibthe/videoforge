@@ -46,9 +46,9 @@ def ensure_macos_file_picker_entitlements(project_root: Path) -> None:
 
         entitlements = plistlib.loads(path.read_bytes())
 
-        entitlements[
-            "com.apple.security.files.user-selected.read-only"
-        ] = True
+        # File selection needs read access; custom output folders need write access.
+        entitlements["com.apple.security.files.user-selected.read-only"] = True
+        entitlements["com.apple.security.files.user-selected.read-write"] = True
         entitlements["com.apple.security.assets.movies.read-write"] = True
 
         path.write_bytes(
