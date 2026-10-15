@@ -862,6 +862,157 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     }
   }
 
+  Future<void> _compareProfilesOnTestClip() async {
+    if (_isEncoding || _jobs.isEmpty || _outputDirectory == null) return;
+    final availableJobs = _jobs.where((job) => File(job.path).existsSync()).toList();
+    if (availableJobs.isEmpty) {
+      _showMessage('В очереди нет доступных исходных видео.');
+      return;
+    }
+
+    VideoJob selectedJob = availableJobs.first;
+    final selectedProfiles = <ExportProfile>{_profile, ExportProfile.highQuality, ExportProfile.compact};
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Сравнить профили'),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text('Один и тот же 20-секундный фрагмент будет обработан каждым выбранным профилем. Сравнение показывает размер и время, но не гарантирует одинаковое визуальное качество.'),
+                  const SizedBox(height: 14),
+                  DropdownButtonFormField<VideoJob>(
+                    value: selectedJob,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Исходное видео'),
+                    items: availableJobs.map((job) => DropdownMenuItem<VideoJob>(value: job, child: Text(job.name, overflow: TextOverflow.ellipsis))).toList(),
+                    onChanged: (job) { if (job != null) setDialogState(() => selectedJob = job); },
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Профили для сравнения', style: TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  ...ExportProfile.values.map((profile) => CheckboxListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    value: selectedProfiles.contains(profile),
+                    title: Text(profile.title),
+                    subtitle: Text(profile.description, maxLines: 2, overflow: TextOverflow.ellipsis),
+                    onChanged: (checked) => setDialogState(() {
+                      if (checked == true) {
+                        selectedProfiles.add(profile);
+                      } else if (selectedProfiles.length > 1) {
+                        selectedProfiles.remove(profile);
+                      }
+                    }),
+                  )),
+                ],
+              ),
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
+            FilledButton(onPressed: selectedProfiles.isEmpty ? null : () => Navigator.pop(dialogContext, true), child: const Text('Начать сравнение')),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted || selectedProfiles.isEmpty) return;
+
+    final oldProfile = _profile;
+    final profiles = ExportProfile.values.where(selectedProfiles.contains).toList();
+    final results = <({ExportProfile profile, String path, int bytes, Duration elapsed})>[];
+    final errors = <String>[];
+    final sourceDuration = await _getMediaDuration(selectedJob.path);
+    final sampleDuration = sourceDuration > 0 ? (sourceDuration < 20 ? sourceDuration : 20) : 20.0;
+
+    setState(() {
+      _isEncoding = true;
+      _cancelRequested = false;
+      _currentJob = 0;
+      _currentTotal = profiles.length;
+      _currentProgress = null;
+      _currentDurationSeconds = sampleDuration;
+      _currentMediaSeconds = 0;
+      _currentSpeed = 0;
+      _status = 'Сравниваем ${profiles.length} профиля на одном фрагменте';
+    });
+
+    try {
+      for (var i = 0; i < profiles.length; i++) {
+        if (_cancelRequested) break;
+        final profile = profiles[i];
+        if (mounted) {
+          setState(() {
+            _profile = profile;
+            _currentJob = i + 1;
+            _currentProgress = null;
+            _currentMediaSeconds = 0;
+            _currentSpeed = 0;
+            _status = 'Тест ${i + 1}/${profiles.length}: ${profile.title}';
+          });
+        }
+        String? outputPath;
+        final stopwatch = Stopwatch()..start();
+        try {
+          final base = '${p.basenameWithoutExtension(selectedJob.name)}_compare_${profile.name}_20s';
+          outputPath = await _uniqueOutputPathForProfile(base, profile);
+          final result = await _runFfmpeg(selectedJob.path, outputPath, profile, sampleDuration, maxDurationSeconds: 20);
+          _activeSessionId = null;
+          if (!result.success) throw StateError(result.message ?? 'Кодирование не завершено.');
+          final output = File(outputPath);
+          if (!await output.exists() || await output.length() == 0 || await _probeJson(outputPath) == null) {
+            throw StateError('Файл не прошёл проверку FFprobe.');
+          }
+          stopwatch.stop();
+          final bytes = await output.length();
+          results.add((profile: profile, path: outputPath, bytes: bytes, elapsed: stopwatch.elapsed));
+          _diagnosticLog.add('${DateTime.now().toIso8601String()} PROFILE COMPARISON: ${selectedJob.name}; profile=${profile.name}; bytes=$bytes; elapsedMs=${stopwatch.elapsedMilliseconds}; output=$outputPath');
+        } catch (error) {
+          if (outputPath != null) await _deleteIfExists(outputPath);
+          errors.add('${profile.title}: $error');
+          _diagnosticLog.add('${DateTime.now().toIso8601String()} PROFILE COMPARISON ERROR: ${profile.name}; $error');
+        }
+      }
+
+      if (mounted) {
+        setState(() => _status = _cancelRequested ? 'Сравнение остановлено' : 'Сравнение профилей завершено');
+      }
+      await _persistState();
+      if (!mounted) return;
+      final report = <String>[
+        if (results.isNotEmpty) 'Успешные тесты:',
+        ...results.map((r) => '${r.profile.title}\nРазмер: ${_formatBytes(r.bytes)} · Время: ${r.elapsed.inSeconds} с\n${r.path}'),
+        if (errors.isNotEmpty) '\nОшибки:',
+        ...errors,
+        if (_cancelRequested) '\nСравнение было остановлено пользователем.',
+        if (results.isEmpty && errors.isEmpty) 'Тесты не были завершены.',
+      ];
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Результаты сравнения'),
+          content: SizedBox(width: 480, child: SingleChildScrollView(child: SelectableText(report.join('\n\n')))),
+          actions: <Widget>[TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Закрыть'))],
+        ),
+      );
+    } finally {
+      _activeSessionId = null;
+      if (mounted) {
+        setState(() {
+          _isEncoding = false;
+          _profile = oldProfile;
+          _currentProgress = null;
+          _status = 'Готово к работе';
+        });
+      }
+    }
+  }
+
   Future<String> _uniqueOutputPathForProfile(String baseName, ExportProfile profile) async {
     final directory = _outputDirectory;
     if (directory == null) throw StateError('Папка результатов ещё не готова.');
@@ -1459,6 +1610,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                           OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _analyzeQueuedVideos, icon: const Icon(Icons.manage_search_rounded), label: const Text('Анализ видео')),
                           OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _recommendProfile, icon: const Icon(Icons.auto_awesome_outlined), label: const Text('Подобрать профиль')),
                           OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _createTestClip, icon: const Icon(Icons.science_outlined), label: const Text('Тест 20 секунд')),
+                          OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _compareProfilesOnTestClip, icon: const Icon(Icons.compare_rounded), label: const Text('Сравнить профили')),
                           OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _openHistory, icon: const Icon(Icons.history_rounded), label: const Text('История экспорта')),
                           OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _openPublishingManager, icon: const Icon(Icons.campaign_outlined), label: const Text('Публикации')),
                           OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _compareLatestOutput, icon: const Icon(Icons.compare_arrows_rounded), label: const Text('Проверить результат')),
@@ -1621,8 +1773,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       final intro = Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: const Color(0xFFB5F36D).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(30)), child: const Text('ПАКЕТНАЯ ОБРАБОТКА', style: TextStyle(color: Color(0xFFB5F36D), fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2))),
         const SizedBox(height: 17),
-        Text('Подготовь видео
-к следующему шагу.', style: Theme.of(context).textTheme.headlineMedium),
+        Text('Подготовь видео к следующему шагу.', style: Theme.of(context).textTheme.headlineMedium),
         const SizedBox(height: 10),
         const Text('Добавь один файл или целую папку видео. Выбери профиль — VideoForge обработает очередь на этом устройстве.', style: TextStyle(fontSize: 13, height: 1.55, color: Color(0xFFB5B9AE))),
         const SizedBox(height: 19),
