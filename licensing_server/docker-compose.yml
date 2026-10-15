@@ -1,0 +1,15 @@
+services:
+  videoforge-license-api:
+    build: .
+    restart: unless-stopped
+    environment:
+      VF_LICENSE_DATA_DIR: /data
+      VF_LICENSE_DB: /data/licenses.sqlite3
+      VF_ISSUER_PUBLIC_KEY: /app/keys/issuer_public.pem
+      VF_SERVER_PRIVATE_KEY: /run/secrets/server_private.pem
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./data:/data
+      - ./keys/issuer_public.pem:/app/keys/issuer_public.pem:ro
+      - ./keys/server_private.pem:/run/secrets/server_private.pem:ro

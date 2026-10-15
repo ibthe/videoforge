@@ -7,7 +7,7 @@ command -v python3 >/dev/null 2>&1 || { echo "Нужен Python 3." >&2; exit 2;
 command -v hdiutil >/dev/null 2>&1 || { echo "Сборка macOS требует macOS." >&2; exit 2; }
 python3 scripts/prepare_platforms.py
 flutter pub get
-flutter build macos --release
+flutter build macos --release --dart-define="LICENSE_SERVER_URL=${LICENSE_SERVER_URL:-}"
 APP_DIR="$ROOT/build/macos/Build/Products/Release"
 APP="$(find "$APP_DIR" -maxdepth 1 -name '*.app' -print -quit)"
 [ -n "$APP" ] && [ -d "$APP" ] || { echo "Не найден macOS .app в $APP_DIR" >&2; exit 3; }

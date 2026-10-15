@@ -11,7 +11,7 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
 
 python .\scripts\prepare_platforms.py
 flutter pub get
-flutter build windows --release
+flutter build windows --release --dart-define="LICENSE_SERVER_URL=$env:LICENSE_SERVER_URL"
 
 $Release = Join-Path $Root 'build\windows\x64\runner\Release'
 if (-not (Test-Path (Join-Path $Release 'videoforge.exe'))) {

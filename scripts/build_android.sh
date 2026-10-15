@@ -6,8 +6,8 @@ command -v flutter >/dev/null 2>&1 || { echo "Flutter 3.38.1+ не найден.
 command -v python3 >/dev/null 2>&1 || { echo "Нужен Python 3." >&2; exit 2; }
 python3 scripts/prepare_platforms.py
 flutter pub get
-flutter build apk --release
-flutter build appbundle --release
+flutter build apk --release --dart-define="LICENSE_SERVER_URL=${LICENSE_SERVER_URL:-}"
+flutter build appbundle --release --dart-define="LICENSE_SERVER_URL=${LICENSE_SERVER_URL:-}"
 mkdir -p "$ROOT/dist"
 cp "$ROOT/build/app/outputs/flutter-apk/app-release.apk" "$ROOT/dist/VideoForge-Android.apk"
 cp "$ROOT/build/app/outputs/bundle/release/app-release.aab" "$ROOT/dist/VideoForge-Android.aab"

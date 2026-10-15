@@ -20,7 +20,8 @@ class VideoForgeLicensing {
   static const _licenseKey = 'videoforge.license.signedToken';
   static const _installIdKey = 'videoforge.license.installId';
   // Raw 32-byte Ed25519 public key, URL-safe base64 without padding.
-  static const _publicKeyB64 = '7ZZkAm9oR8ITC5CpGk7WMzHYDy_mL91DQ7IDqD4QI50';
+  static const _serverPublicKeyB64 = 'GnsZ29_XWf1j40y-R0mWNjWmRryjPmhqltGN7M_KroY';
+  static const _activationEndpoint = String.fromEnvironment('LICENSE_SERVER_URL', defaultValue: '');
   static const _timeHosts = <String>[
     'https://ya.ru/',
     'https://www.google.com/',
@@ -180,10 +181,10 @@ class VideoForgeLicensing {
   Future<Map<String, Object?>?> _validateToken(String token, DateTime now) async {
     try {
       final parts = token.trim().split('.');
-      if (parts.length != 3 || parts[0] != 'VF1') return null;
+      if (parts.length != 3 || parts[0] != 'VFL1') return null;
       final payloadBytes = base64Url.decode(base64Url.normalize(parts[1]));
       final signature = base64Url.decode(base64Url.normalize(parts[2]));
-      final publicBytes = base64Url.decode(base64Url.normalize(_publicKeyB64));
+      final publicBytes = base64Url.decode(base64Url.normalize(_serverPublicKeyB64));
       final publicKey = SimplePublicKey(publicBytes, type: KeyPairType.ed25519);
       final valid = await Ed25519().verify(payloadBytes, signature: Signature(signature, publicKey: publicKey));
       if (!valid) return null;
@@ -193,7 +194,9 @@ class VideoForgeLicensing {
       final licenseId = decoded['licenseId'] as String?;
       final boundInstallId = decoded['installId'] as String?;
       if (expiry == null || licenseId == null || licenseId.isEmpty) return null;
-      if (boundInstallId != null && boundInstallId != installId) return null;
+      if (boundInstallId == null || boundInstallId != installId) return null;
+      if (decoded['email'] is! String || (decoded['email'] as String).isEmpty) return null;
+      if (decoded['activatedAt'] is! int) return null;
       if (!now.isBefore(DateTime.fromMillisecondsSinceEpoch(expiry, isUtc: true))) return null;
       return Map<String, Object?>.from(decoded);
     } catch (_) {
@@ -201,13 +204,53 @@ class VideoForgeLicensing {
     }
   }
 
-  Future<String?> activate(String token) async {
+  Future<String?> activate(String voucher, String email) async {
     if (clockBlocked) return 'Сначала восстановите правильное время и выполните проверку через интернет.';
-    final parsed = await _validateToken(token, trustedNow ?? DateTime.now().toUtc());
-    if (parsed == null) return 'Ключ недействителен, истёк или выпущен для другой установки.';
-    await _prefs.setString(_licenseKey, token.trim());
-    await refreshTimeAndLicense();
-    return isLicensed ? null : status;
+    if (_activationEndpoint.isEmpty) {
+      return 'Сервер активации не настроен. Соберите приложение с --dart-define=LICENSE_SERVER_URL=https://ваш-домен/v1/activate.';
+    }
+    final endpoint = Uri.tryParse(_activationEndpoint);
+    if (endpoint == null || endpoint.scheme != 'https' || endpoint.host.isEmpty) {
+      return 'Адрес сервера активации должен использовать HTTPS.';
+    }
+    if (email.trim().isEmpty || !email.contains('@')) return 'Введите email, на который выпущен ключ.';
+    try {
+      final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+      try {
+        final request = await client.postUrl(endpoint).timeout(const Duration(seconds: 10));
+        request.headers.contentType = ContentType.json;
+        request.write(jsonEncode(<String, Object>{
+          'key': voucher.trim(),
+          'email': email.trim().toLowerCase(),
+          'installId': installId!,
+        }));
+        final response = await request.close().timeout(const Duration(seconds: 15));
+        final body = await utf8.decoder.bind(response).join();
+        Map<String, dynamic> decoded = <String, dynamic>{};
+        try { decoded = jsonDecode(body) as Map<String, dynamic>; } catch (_) {}
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          final detail = decoded['detail']?.toString();
+          return detail ?? 'Сервер отклонил активацию (HTTP ${response.statusCode}).';
+        }
+        final token = decoded['licenseToken'] as String?;
+        if (token == null || token.isEmpty) return 'Сервер вернул некорректный ответ.';
+        final parsed = await _validateToken(token, trustedNow ?? DateTime.now().toUtc());
+        if (parsed == null || parsed['email']?.toString().toLowerCase() != email.trim().toLowerCase()) {
+          return 'Подписанная лицензия недействительна или выпущена для другого email/устройства.';
+        }
+        await _prefs.setString(_licenseKey, token);
+        await refreshTimeAndLicense();
+        return isLicensed ? null : status;
+      } finally {
+        client.close(force: true);
+      }
+    } on TimeoutException {
+      return 'Сервер активации не ответил вовремя. Проверьте интернет и повторите попытку.';
+    } on SocketException {
+      return 'Нет соединения с сервером активации.';
+    } catch (e) {
+      return 'Ошибка активации: $e';
+    }
   }
 
   Future<void> clearLicense() async {

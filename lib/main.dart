@@ -1538,6 +1538,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     final licensing = _licensing;
     if (licensing == null || !mounted) return;
     final controller = TextEditingController();
+    final emailController = TextEditingController();
     String? errorText;
     bool checking = false;
     await showDialog<void>(
@@ -1547,7 +1548,11 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
         title: const Text('Лицензия VideoForge'),
         content: SizedBox(width: 480, child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
           Text(licensing.status),
+          const SizedBox(height: 8),
+          SelectableText('ID установки: ${licensing.installId ?? 'не определён'}', style: const TextStyle(fontSize: 12)),
           const SizedBox(height: 12),
+          TextField(controller: emailController, enabled: !checking && !licensing.clockBlocked, keyboardType: TextInputType.emailAddress, autocorrect: false, decoration: const InputDecoration(labelText: 'Email, на который выпущен ключ')),
+          const SizedBox(height: 8),
           if (licensing.clockBlocked) const Text('Активация заблокирована до проверки правильных часов через интернет.', style: TextStyle(color: Color(0xFFFF8178))),
           TextField(controller: controller, enabled: !checking && !licensing.clockBlocked, autocorrect: false, enableSuggestions: false, decoration: const InputDecoration(labelText: 'Лицензионный ключ', hintText: 'VF1.payload.signature')),
           if (errorText != null) ...<Widget>[const SizedBox(height: 8), Text(errorText!, style: const TextStyle(color: Color(0xFFFF8178)))],
@@ -1565,7 +1570,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
           if (!licensing.clockBlocked) TextButton(onPressed: checking ? null : () => Navigator.pop(dialogContext), child: const Text('Закрыть')),
           FilledButton(onPressed: checking || licensing.clockBlocked ? null : () async {
             setDialogState(() { checking = true; errorText = null; });
-            final error = await licensing.activate(controller.text);
+            final error = await licensing.activate(controller.text, emailController.text);
             if (!dialogContext.mounted) return;
             setDialogState(() { checking = false; errorText = error; });
             if (error == null) {
@@ -1578,6 +1583,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       )),
     );
     controller.dispose();
+    emailController.dispose();
     if (mounted) setState(() {});
   }
 
