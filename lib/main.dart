@@ -14,6 +14,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'licensing.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -206,6 +207,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   static const _prefCustomPreset = 'videoforge.customPreset';
   static const _prefHistory = 'videoforge.exportHistory';
   SharedPreferences? _preferences;
+  VideoForgeLicensing? _licensing;
 
   @override
   void initState() {
@@ -216,6 +218,8 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   Future<void> _prepareOutputDirectory() async {
     try {
       _preferences = await SharedPreferences.getInstance();
+      _licensing = VideoForgeLicensing(_preferences!);
+      await _licensing!.initialize();
       _customCrf = _preferences?.getInt(_prefCustomCrf) ?? 20;
       _customPreset = _preferences?.getString(_prefCustomPreset) ?? 'medium';
       final savedProfile = _preferences?.getString(_prefProfile);
@@ -588,6 +592,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
 
   Future<void> _encodeAll() async {
     if (_isEncoding || _outputDirectory == null) return;
+    if (!await _ensureLicense()) return;
 
     final pending = _jobs
         .where(
@@ -761,6 +766,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   }
 
   Future<void> _createTestClip() async {
+    if (!await _ensureLicense()) return;
     if (_isEncoding || _jobs.isEmpty || _outputDirectory == null) return;
     final availableJobs = _jobs.where((job) => File(job.path).existsSync()).toList();
     if (availableJobs.isEmpty) {
@@ -825,9 +831,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       final testOutputPath = await _uniqueOutputPathForProfile(base, selectedProfile);
       outputPath = testOutputPath;
       final sourceDuration = await _getMediaDuration(selectedJob.path);
-      final double sampleDuration = sourceDuration > 0
-          ? (sourceDuration < 20 ? sourceDuration.toDouble() : 20.0)
-          : 20.0;
+      final sampleDuration = sourceDuration > 0 ? (sourceDuration < 20 ? sourceDuration : 20) : 20.0;
       final result = await _runFfmpeg(
         selectedJob.path,
         testOutputPath,
@@ -865,6 +869,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   }
 
   Future<void> _compareProfilesOnTestClip() async {
+    if (!await _ensureLicense()) return;
     if (_isEncoding || _jobs.isEmpty || _outputDirectory == null) return;
     final availableJobs = _jobs.where((job) => File(job.path).existsSync()).toList();
     if (availableJobs.isEmpty) {
@@ -930,9 +935,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     final results = <({ExportProfile profile, String path, int bytes, Duration elapsed})>[];
     final errors = <String>[];
     final sourceDuration = await _getMediaDuration(selectedJob.path);
-    final double sampleDuration = sourceDuration > 0
-          ? (sourceDuration < 20 ? sourceDuration.toDouble() : 20.0)
-          : 20.0;
+    final sampleDuration = sourceDuration > 0 ? (sourceDuration < 20 ? sourceDuration : 20) : 20.0;
 
     setState(() {
       _isEncoding = true;
@@ -1518,6 +1521,84 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     _persistState();
   }
 
+  Future<bool> _ensureLicense() async {
+    final licensing = _licensing;
+    if (licensing == null) {
+      _showMessage('Проверка лицензии ещё не завершена.');
+      return false;
+    }
+    if (!licensing.isAllowed) {
+      await _showLicenseDialog();
+      return licensing.isAllowed;
+    }
+    return true;
+  }
+
+  Future<void> _showLicenseDialog() async {
+    final licensing = _licensing;
+    if (licensing == null || !mounted) return;
+    final controller = TextEditingController();
+    String? errorText;
+    bool checking = false;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: !licensing.clockBlocked,
+      builder: (dialogContext) => StatefulBuilder(builder: (context, setDialogState) => AlertDialog(
+        title: const Text('Лицензия VideoForge'),
+        content: SizedBox(width: 480, child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+          Text(licensing.status),
+          const SizedBox(height: 12),
+          if (licensing.clockBlocked) const Text('Активация заблокирована до проверки правильных часов через интернет.', style: TextStyle(color: Color(0xFFFF8178))),
+          TextField(controller: controller, enabled: !checking && !licensing.clockBlocked, autocorrect: false, enableSuggestions: false, decoration: const InputDecoration(labelText: 'Лицензионный ключ', hintText: 'VF1.payload.signature')),
+          if (errorText != null) ...<Widget>[const SizedBox(height: 8), Text(errorText!, style: const TextStyle(color: Color(0xFFFF8178)))],
+        ])),
+        actions: <Widget>[
+          TextButton(onPressed: checking ? null : () async {
+            setDialogState(() { checking = true; errorText = null; });
+            await licensing.refreshTimeAndLicense();
+            if (!dialogContext.mounted) return;
+            setDialogState(() { checking = false; errorText = licensing.status; });
+            if (!licensing.clockBlocked) {
+              if (mounted) setState(() {});
+            }
+          }, child: const Text('Проверить время')),
+          if (!licensing.clockBlocked) TextButton(onPressed: checking ? null : () => Navigator.pop(dialogContext), child: const Text('Закрыть')),
+          FilledButton(onPressed: checking || licensing.clockBlocked ? null : () async {
+            setDialogState(() { checking = true; errorText = null; });
+            final error = await licensing.activate(controller.text);
+            if (!dialogContext.mounted) return;
+            setDialogState(() { checking = false; errorText = error; });
+            if (error == null) {
+              Navigator.pop(dialogContext);
+              if (mounted) setState(() {});
+              _showMessage('Лицензия успешно активирована.');
+            }
+          }, child: checking ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Активировать')),
+        ],
+      )),
+    );
+    controller.dispose();
+    if (mounted) setState(() {});
+  }
+
+  Widget _buildLicenseCard() {
+    final license = _licensing;
+    final allowed = license?.isAllowed ?? false;
+    final title = license == null ? 'Проверка лицензии…' : license.isLicensed ? 'Лицензия активна' : license.isTrialActive ? 'Пробный период · ${license.trialDaysLeft} дн.' : 'Требуется лицензия';
+    final description = license?.status ?? 'Состояние лицензии загружается.';
+    return Card(child: Padding(padding: const EdgeInsets.all(18), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+      Icon(allowed ? Icons.verified_user_outlined : Icons.lock_outline_rounded, color: allowed ? const Color(0xFFB5F36D) : const Color(0xFFFF8178), size: 25),
+      const SizedBox(width: 12),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+        const SizedBox(height: 5),
+        Text(description, style: const TextStyle(fontSize: 12, color: Color(0xFFB5B9AE), height: 1.4)),
+      ])),
+      const SizedBox(width: 8),
+      OutlinedButton(onPressed: _showLicenseDialog, child: Text(allowed ? 'Управление' : 'Активировать')),
+    ])));
+  }
+
   void _showMessage(String message) {
     if (!mounted) return;
 
@@ -1587,7 +1668,9 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                       padding: EdgeInsets.fromLTRB(wide ? 34 : 18, 24, wide ? 34 : 18, 36),
                       children: <Widget>[
                         _buildHeader(),
-                        const SizedBox(height: 28),
+                        const SizedBox(height: 14),
+                        _buildLicenseCard(),
+                        const SizedBox(height: 20),
                         _buildHeroCard(),
                         const SizedBox(height: 18),
                         if (wide)
@@ -1777,7 +1860,8 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       final intro = Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: const Color(0xFFB5F36D).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(30)), child: const Text('ПАКЕТНАЯ ОБРАБОТКА', style: TextStyle(color: Color(0xFFB5F36D), fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2))),
         const SizedBox(height: 17),
-        Text('Подготовь видео к следующему шагу.', style: Theme.of(context).textTheme.headlineMedium),
+        Text('Подготовь видео
+к следующему шагу.', style: Theme.of(context).textTheme.headlineMedium),
         const SizedBox(height: 10),
         const Text('Добавь один файл или целую папку видео. Выбери профиль — VideoForge обработает очередь на этом устройстве.', style: TextStyle(fontSize: 13, height: 1.55, color: Color(0xFFB5B9AE))),
         const SizedBox(height: 19),

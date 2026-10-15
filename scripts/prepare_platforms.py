@@ -53,6 +53,8 @@ def ensure_macos_file_picker_entitlements(project_root: Path) -> None:
 
         entitlements = plistlib.loads(path.read_bytes())
 
+        # Network time verification requires outgoing HTTPS in the sandbox.
+        entitlements["com.apple.security.network.client"] = True
         # File selection needs read access; custom output folders need write access.
         entitlements["com.apple.security.files.user-selected.read-only"] = True
         entitlements["com.apple.security.files.user-selected.read-write"] = True
@@ -184,6 +186,9 @@ def set_android_target() -> None:
             text,
             count=1,
         )
+        internet_permission = '<uses-permission android:name="android.permission.INTERNET" />'
+        if internet_permission not in text:
+            text = re.sub(r'(<manifest\b[^>]*>)', r'\1\n    ' + internet_permission, text, count=1)
         manifest.write_text(text, encoding="utf-8")
 
 
