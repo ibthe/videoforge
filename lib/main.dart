@@ -825,7 +825,9 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       final testOutputPath = await _uniqueOutputPathForProfile(base, selectedProfile);
       outputPath = testOutputPath;
       final sourceDuration = await _getMediaDuration(selectedJob.path);
-      final sampleDuration = sourceDuration > 0 ? (sourceDuration < 20 ? sourceDuration : 20) : 20.0;
+      final double sampleDuration = sourceDuration > 0
+          ? (sourceDuration < 20 ? sourceDuration.toDouble() : 20.0)
+          : 20.0;
       final result = await _runFfmpeg(
         selectedJob.path,
         testOutputPath,
@@ -928,7 +930,9 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     final results = <({ExportProfile profile, String path, int bytes, Duration elapsed})>[];
     final errors = <String>[];
     final sourceDuration = await _getMediaDuration(selectedJob.path);
-    final sampleDuration = sourceDuration > 0 ? (sourceDuration < 20 ? sourceDuration : 20) : 20.0;
+    final double sampleDuration = sourceDuration > 0
+          ? (sourceDuration < 20 ? sourceDuration.toDouble() : 20.0)
+          : 20.0;
 
     setState(() {
       _isEncoding = true;
