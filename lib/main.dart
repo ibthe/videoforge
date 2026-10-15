@@ -831,7 +831,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       final testOutputPath = await _uniqueOutputPathForProfile(base, selectedProfile);
       outputPath = testOutputPath;
       final sourceDuration = await _getMediaDuration(selectedJob.path);
-      final sampleDuration = sourceDuration > 0 ? (sourceDuration < 20 ? sourceDuration : 20) : 20.0;
+      final double sampleDuration = (sourceDuration > 0 ? (sourceDuration < 20 ? sourceDuration : 20) : 20.0).toDouble();
       final result = await _runFfmpeg(
         selectedJob.path,
         testOutputPath,
@@ -935,7 +935,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     final results = <({ExportProfile profile, String path, int bytes, Duration elapsed})>[];
     final errors = <String>[];
     final sourceDuration = await _getMediaDuration(selectedJob.path);
-    final sampleDuration = sourceDuration > 0 ? (sourceDuration < 20 ? sourceDuration : 20) : 20.0;
+    final double sampleDuration = (sourceDuration > 0 ? (sourceDuration < 20 ? sourceDuration : 20) : 20.0).toDouble();
 
     setState(() {
       _isEncoding = true;
@@ -1866,8 +1866,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       final intro = Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: const Color(0xFFB5F36D).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(30)), child: const Text('ПАКЕТНАЯ ОБРАБОТКА', style: TextStyle(color: Color(0xFFB5F36D), fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2))),
         const SizedBox(height: 17),
-        Text('Подготовь видео
-к следующему шагу.', style: Theme.of(context).textTheme.headlineMedium),
+        Text('Подготовь видео\nк следующему шагу.', style: Theme.of(context).textTheme.headlineMedium),
         const SizedBox(height: 10),
         const Text('Добавь один файл или целую папку видео. Выбери профиль — VideoForge обработает очередь на этом устройстве.', style: TextStyle(fontSize: 13, height: 1.55, color: Color(0xFFB5B9AE))),
         const SizedBox(height: 19),
