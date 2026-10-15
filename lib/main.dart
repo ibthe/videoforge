@@ -661,10 +661,27 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
 
           if (result.success) {
             final outputFile = File(outputPath);
+            if (!await outputFile.exists()) {
+              throw StateError('FFmpeg сообщил об успехе, но выходной файл не найден.');
+            }
             final outputBytes = await outputFile.length();
+            if (outputBytes <= 0) {
+              throw StateError('Выходной файл пуст. Экспорт не прошёл проверку.');
+            }
             final verified = await _probeJson(outputPath);
+            if (verified == null) {
+              throw StateError('Готовый файл создан, но FFprobe не смог прочитать его структуру. Файл удалён, чтобы не считать непроверенный результат успешным.');
+            }
+            final outputDuration = await _getMediaDuration(outputPath);
+            if (durationSeconds > 0 && outputDuration > 0) {
+              final durationDelta = (durationSeconds - outputDuration).abs();
+              final allowedDelta = durationSeconds > 100 ? 2.0 : durationSeconds * 0.02;
+              if (durationDelta > allowedDelta) {
+                _diagnosticLog.add('${DateTime.now().toIso8601String()} WARNING: длительность результата отличается на ${durationDelta.toStringAsFixed(2)} сек. для ${job.name}');
+              }
+            }
             final exportedAt = DateTime.now().toIso8601String();
-            _diagnosticLog.add('$exportedAt OK: ${job.name} -> ${p.basename(outputPath)} (${_formatBytes(outputBytes)})${verified == null ? ' — метаданные результата прочитать не удалось' : ''}');
+            _diagnosticLog.add('$exportedAt VERIFIED: ${job.name} -> ${p.basename(outputPath)} (${_formatBytes(outputBytes)}); выходной файл существует, не пустой и читается FFprobe.');
             _exportHistory.insert(0, <String, Object?>{'date': exportedAt, 'source': job.path, 'sourceName': job.name, 'output': outputPath, 'sourceBytes': job.bytes, 'outputBytes': outputBytes, 'profile': _profile.name});
             if (_exportHistory.length > 500) _exportHistory.removeRange(500, _exportHistory.length);
             setState(() {
@@ -741,6 +758,159 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
               ? 'Готово! Файлы сохранены в Processed_New.'
               : 'Обработка завершена. Успешно: $completed, с ошибкой: $failed.',
     );
+  }
+
+  Future<void> _createTestClip() async {
+    if (_isEncoding || _jobs.isEmpty || _outputDirectory == null) return;
+    final availableJobs = _jobs.where((job) => File(job.path).existsSync()).toList();
+    if (availableJobs.isEmpty) {
+      _showMessage('В очереди нет доступных исходных видео.');
+      return;
+    }
+    VideoJob selectedJob = availableJobs.first;
+    ExportProfile selectedProfile = _profile;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Тестовый фрагмент'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text('Сначала обработать первые 20 секунд, чтобы проверить настройки и примерный размер файла.'),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<VideoJob>(
+                value: selectedJob,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Исходное видео'),
+                items: availableJobs.map((job) => DropdownMenuItem<VideoJob>(value: job, child: Text(job.name, overflow: TextOverflow.ellipsis))).toList(),
+                onChanged: (job) { if (job != null) setDialogState(() => selectedJob = job); },
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<ExportProfile>(
+                value: selectedProfile,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Профиль'),
+                items: ExportProfile.values.map((profile) => DropdownMenuItem<ExportProfile>(value: profile, child: Text(profile.title, overflow: TextOverflow.ellipsis))).toList(),
+                onChanged: (profile) { if (profile != null) setDialogState(() => selectedProfile = profile); },
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Создать тест')),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final oldProfile = _profile;
+    setState(() {
+      _profile = selectedProfile;
+      _isEncoding = true;
+      _cancelRequested = false;
+      _currentJob = 1;
+      _currentTotal = 1;
+      _currentProgress = null;
+      _currentDurationSeconds = 20;
+      _currentMediaSeconds = 0;
+      _currentSpeed = 0;
+      _status = 'Создаём тестовый фрагмент: ${selectedJob.name}';
+    });
+    String? outputPath;
+    try {
+      final base = '${p.basenameWithoutExtension(selectedJob.name)}_test20s';
+      final testOutputPath = await _uniqueOutputPathForProfile(base, selectedProfile);
+      outputPath = testOutputPath;
+      final sourceDuration = await _getMediaDuration(selectedJob.path);
+      final sampleDuration = sourceDuration > 0 ? (sourceDuration < 20 ? sourceDuration : 20) : 20.0;
+      final result = await _runFfmpeg(
+        selectedJob.path,
+        testOutputPath,
+        selectedProfile,
+        sampleDuration,
+        maxDurationSeconds: 20,
+      );
+      _activeSessionId = null;
+      if (!result.success) throw StateError(result.message ?? 'Не удалось создать тестовый фрагмент.');
+      final file = File(testOutputPath);
+      if (!await file.exists() || await file.length() == 0 || await _probeJson(testOutputPath) == null) {
+        throw StateError('Тестовый файл не прошёл проверку.');
+      }
+      final size = await file.length();
+      _diagnosticLog.add('${DateTime.now().toIso8601String()} TEST CLIP: ${selectedJob.name}; profile=${selectedProfile.name}; output=$testOutputPath; bytes=$size');
+      if (!mounted) return;
+      setState(() => _status = 'Тестовый фрагмент готов: ${p.basename(testOutputPath)}');
+      await _persistState();
+      _showMessage('Тестовый фрагмент готов (${_formatBytes(size)}): ${p.basename(testOutputPath)}');
+    } catch (error) {
+      if (outputPath != null) await _deleteIfExists(outputPath);
+      _diagnosticLog.add('${DateTime.now().toIso8601String()} TEST CLIP ERROR: $error');
+      if (mounted) _showMessage('Не удалось создать тестовый фрагмент: $error');
+    } finally {
+      _activeSessionId = null;
+      if (mounted) {
+        setState(() {
+          _isEncoding = false;
+          _profile = oldProfile;
+          _currentProgress = null;
+          _status = 'Готово к работе';
+        });
+      }
+    }
+  }
+
+  Future<String> _uniqueOutputPathForProfile(String baseName, ExportProfile profile) async {
+    final directory = _outputDirectory;
+    if (directory == null) throw StateError('Папка результатов ещё не готова.');
+    await directory.create(recursive: true);
+    final safeBase = baseName.trim().isEmpty ? 'video_test20s' : baseName;
+    final extension = profile.outputExtension;
+    var candidate = p.join(directory.path, '$safeBase.$extension');
+    var suffix = 2;
+    while (await File(candidate).exists()) {
+      candidate = p.join(directory.path, '${safeBase}_$suffix.$extension');
+      suffix++;
+    }
+    return candidate;
+  }
+
+  Future<void> _recommendProfile() async {
+    if (_jobs.isEmpty) {
+      _showMessage('Сначала добавьте видео, чтобы подобрать профиль.');
+      return;
+    }
+    final job = _jobs.firstWhere((item) => File(item.path).existsSync(), orElse: () => _jobs.first);
+    ExportProfile recommended;
+    String reason;
+    if (job.bytes >= 1024 * 1024 * 1024) {
+      recommended = ExportProfile.compact;
+      reason = 'Исходный файл больше 1 ГБ. Компактный профиль может сократить размер, но повторное кодирование H.264 является кодированием с потерями.';
+    } else if (job.metadataJson?.contains('3840') == true || job.metadataJson?.contains('2160') == true) {
+      recommended = ExportProfile.highQuality;
+      reason = 'В метаданных обнаружено разрешение 4K. Высокое качество сохраняет исходное разрешение, если не выбран профиль с ограничением размера кадра.';
+    } else {
+      recommended = ExportProfile.balanced;
+      reason = 'Для обычной конвертации это отправная точка. Если приоритет — архивное сохранение, выберите FFV1 без потерь; для максимальной совместимости обычно удобнее H.264/MP4.';
+    }
+    final apply = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
+      title: const Text('Рекомендация VideoForge'),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        Text('Для «${job.name}» предлагается профиль «${recommended.title}».', style: const TextStyle(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 10),
+        Text(reason),
+        const SizedBox(height: 10),
+        const Text('Рекомендация основана на доступных метаданных и размере файла, а не гарантирует лучший результат для любого видео.', style: TextStyle(fontSize: 12, color: Colors.white60)),
+      ]),
+      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Оставить как есть')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Применить профиль'))],
+    ));
+    if (apply == true && mounted) {
+      setState(() => _profile = recommended);
+      await _persistState();
+      _showMessage('Выбран профиль: ${recommended.title}');
+    }
   }
 
   Future<String?> _probeJson(String path) async {
@@ -943,8 +1113,9 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     String inputPath,
     String outputPath,
     ExportProfile profile,
-    double durationSeconds,
-  ) async {
+    double durationSeconds, {
+    double? maxDurationSeconds,
+  }) async {
     final completer =
         Completer<({bool success, String? message})>();
 
@@ -999,6 +1170,9 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
         '-vf',
         "scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
       ]);
+    }
+    if (maxDurationSeconds != null && maxDurationSeconds > 0) {
+      args.addAll(<String>['-t', maxDurationSeconds.toStringAsFixed(2)]);
     }
     args.add(outputPath);
 
@@ -1283,6 +1457,8 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                         const SizedBox(height: 12),
                         Wrap(spacing: 8, runSpacing: 8, children: <Widget>[
                           OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _analyzeQueuedVideos, icon: const Icon(Icons.manage_search_rounded), label: const Text('Анализ видео')),
+                          OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _recommendProfile, icon: const Icon(Icons.auto_awesome_outlined), label: const Text('Подобрать профиль')),
+                          OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _createTestClip, icon: const Icon(Icons.science_outlined), label: const Text('Тест 20 секунд')),
                           OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _openHistory, icon: const Icon(Icons.history_rounded), label: const Text('История экспорта')),
                           OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _openPublishingManager, icon: const Icon(Icons.campaign_outlined), label: const Text('Публикации')),
                           OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _compareLatestOutput, icon: const Icon(Icons.compare_arrows_rounded), label: const Text('Проверить результат')),
