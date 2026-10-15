@@ -13,6 +13,9 @@ concurrency:
   group: videoforge-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  LICENSE_SERVER_URL: ${{ vars.LICENSE_SERVER_URL }}
+
 jobs:
   windows:
     name: Windows x64
@@ -204,7 +207,8 @@ jobs:
           project.write_text(text, encoding="utf-8")
           PY
           flutter build ios --release --no-codesign \
-            --dart-define=CI_BUILD=true
+            --dart-define=CI_BUILD=true \
+            --dart-define=LICENSE_SERVER_URL=${{ vars.LICENSE_SERVER_URL }}
 
 
       - name: Package unsigned iOS app for CI inspection
