@@ -359,8 +359,14 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
 
   Future<void> _persistState() async {
     try {
-      final prefs = _preferences ?? await SharedPreferences.getInstance();
-      _preferences = prefs;
+      // If preferences could not be initialized during startup, do not repeatedly
+      // reopen the platform channel from the fallback path. The app can still open;
+      // state persistence can be retried after the user continues.
+      final prefs = _preferences;
+      if (prefs == null) {
+        debugPrint('VideoForge: preferences are unavailable; skipping state persistence.');
+        return;
+      }
       await prefs.setString(_prefProfile, _profile.name);
       await prefs.setInt(_prefCustomCrf, _customCrf);
       await prefs.setString(_prefCustomPreset, _customPreset);
@@ -381,8 +387,11 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       }).toList(growable: false);
       await prefs.setString(_prefQueue, jsonEncode(queue));
       await prefs.setString(_prefHistory, jsonEncode(_exportHistory.take(500).toList()));
-    } catch (_) {
-      if (mounted) _showMessage('Не удалось сохранить настройки приложения.');
+    } catch (error, stackTrace) {
+      // Keep the app usable and expose the real cause in Android logcat / debug logs.
+      debugPrint('VideoForge: failed to persist settings: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) _showMessage('Не удалось сохранить настройки: $error');
     }
   }
 
