@@ -1565,61 +1565,234 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   }
 
   Future<void> _showLicenseDialog() async {
+    if (!mounted) return;
     final licensing = _licensing;
-    if (licensing == null || !mounted) return;
+    if (licensing == null || !licensing.initialized) {
+      _showMessage('Лицензия ещё загружается. Подождите несколько секунд и повторите.');
+      return;
+    }
+
     final controller = TextEditingController();
     final emailController = TextEditingController();
     String? errorText;
     bool checking = false;
+
     await showDialog<void>(
       context: context,
-      barrierDismissible: !licensing.clockBlocked,
-      builder: (dialogContext) => StatefulBuilder(builder: (context, setDialogState) => AlertDialog(
-        title: const Text('Лицензия VideoForge'),
-        content: SizedBox(width: MediaQuery.sizeOf(context).width < 600 ? double.maxFinite : 480, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-          Text(licensing.status),
-          const SizedBox(height: 8),
-          SelectableText('ID установки: ${licensing.installId ?? 'не определён'}', style: const TextStyle(fontSize: 12)),
-          const SizedBox(height: 12),
-          TextField(controller: emailController, enabled: !checking && !licensing.clockBlocked, keyboardType: TextInputType.emailAddress, autocorrect: false, decoration: const InputDecoration(labelText: 'Email, на который выпущен ключ')),
-          const SizedBox(height: 8),
-          if (licensing.clockBlocked) const Text('Активация заблокирована до проверки правильных часов через интернет.', style: TextStyle(color: Color(0xFFFF8178))),
-          TextField(controller: controller, enabled: !checking && !licensing.clockBlocked, autocorrect: false, enableSuggestions: false, decoration: const InputDecoration(labelText: 'Лицензионный ключ', hintText: 'VF1.payload.signature')),
-          if (errorText != null) ...<Widget>[const SizedBox(height: 8), Text(errorText!, style: const TextStyle(color: Color(0xFFFF8178)))],
-        ]))),
-        actions: <Widget>[
-          TextButton(onPressed: checking ? null : () async {
-            setDialogState(() { checking = true; errorText = null; });
-            await licensing.refreshTimeAndLicense(forceNetworkCheck: true);
-            if (!dialogContext.mounted) return;
-            setDialogState(() { checking = false; errorText = licensing.status; });
-            if (!licensing.clockBlocked) {
-              if (mounted) setState(() {});
-            }
-          }, child: const Text('Проверить время')),
-          if (!licensing.clockBlocked) TextButton(onPressed: checking ? null : () => Navigator.pop(dialogContext), child: const Text('Закрыть')),
-          FilledButton(onPressed: checking ? null : () async {
-            setDialogState(() { checking = true; errorText = null; });
-            if (licensing.clockBlocked) {
-              await licensing.refreshTimeAndLicense(forceNetworkCheck: true);
-              if (!dialogContext.mounted) return;
-              if (mounted) setState(() {});
-              if (licensing.clockBlocked) {
-                setDialogState(() { checking = false; errorText = licensing.status; });
-                return;
-              }
-            }
-            final error = await licensing.activate(controller.text, emailController.text);
-            if (!dialogContext.mounted) return;
-            setDialogState(() { checking = false; errorText = error; });
-            if (error == null) {
-              Navigator.pop(dialogContext);
-              if (mounted) setState(() {});
-              _showMessage('Лицензия успешно активирована.');
-            }
-          }, child: checking ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Активировать')),
-        ],
-      )),
+      barrierDismissible: true,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final screen = MediaQuery.sizeOf(context);
+          return Dialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+            backgroundColor: const Color(0xFF1A1C18),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+              side: const BorderSide(color: Color(0xFF30342B)),
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: 420,
+                maxHeight: screen.height * 0.82,
+              ),
+              child: SizedBox(
+                width: screen.width - 32,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFB5F36D).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(13),
+                            ),
+                            child: const Icon(Icons.verified_user_outlined, color: Color(0xFFB5F36D)),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'Активация лицензии',
+                              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Закрыть',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: checking ? null : () => Navigator.pop(dialogContext),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        licensing.status,
+                        style: const TextStyle(fontSize: 13, height: 1.35, color: Color(0xFFB5B9AE)),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF131510),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFF30342B)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            const Text('ID установки', style: TextStyle(fontSize: 11, color: Color(0xFF858B7D))),
+                            const SizedBox(height: 4),
+                            SelectableText(
+                              licensing.installId ?? 'не определён',
+                              style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: emailController,
+                        enabled: !checking && !licensing.clockBlocked,
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next,
+                        autocorrect: false,
+                        decoration: const InputDecoration(
+                          labelText: 'Email лицензии',
+                          hintText: 'name@example.com',
+                          prefixIcon: Icon(Icons.mail_outline_rounded),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: controller,
+                        enabled: !checking && !licensing.clockBlocked,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        textCapitalization: TextCapitalization.none,
+                        textInputAction: TextInputAction.done,
+                        decoration: const InputDecoration(
+                          labelText: 'Лицензионный ключ',
+                          hintText: 'VF1.…',
+                          prefixIcon: Icon(Icons.key_outlined),
+                          isDense: true,
+                        ),
+                      ),
+                      if (errorText != null) ...<Widget>[
+                        const SizedBox(height: 10),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF8178).withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0x55FF8178)),
+                          ),
+                          child: Text(
+                            errorText!,
+                            style: const TextStyle(color: Color(0xFFFFA19A), fontSize: 12, height: 1.35),
+                          ),
+                        ),
+                      ],
+                      if (checking) ...<Widget>[
+                        const SizedBox(height: 12),
+                        const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: <Widget>[
+                            SizedBox(width: 17, height: 17, child: CircularProgressIndicator(strokeWidth: 2)),
+                            SizedBox(width: 9),
+                            Flexible(child: Text('Выполняется проверка…', style: TextStyle(fontSize: 12))),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        height: 48,
+                        child: FilledButton.icon(
+                          onPressed: checking ? null : () async {
+                            FocusScope.of(context).unfocus();
+                            setDialogState(() { checking = true; errorText = null; });
+                            String? activationError;
+                            try {
+                              if (licensing.clockBlocked) {
+                                await licensing.refreshTimeAndLicense(forceNetworkCheck: true);
+                                if (licensing.clockBlocked) {
+                                  activationError = licensing.status;
+                                }
+                              }
+                              if (activationError == null && emailController.text.trim().isEmpty) {
+                                activationError = 'Введите email, на который выпущен ключ.';
+                              }
+                              if (activationError == null && !emailController.text.trim().contains('@')) {
+                                activationError = 'Проверьте адрес email.';
+                              }
+                              if (activationError == null && controller.text.trim().isEmpty) {
+                                activationError = 'Введите лицензионный ключ.';
+                              }
+                              if (activationError == null) {
+                                activationError = await licensing.activate(
+                                  controller.text.trim(),
+                                  emailController.text.trim(),
+                                );
+                              }
+                            } catch (error) {
+                              activationError = 'Не удалось выполнить активацию: $error';
+                            } finally {
+                              if (dialogContext.mounted) {
+                                setDialogState(() {
+                                  checking = false;
+                                  errorText = activationError;
+                                });
+                              }
+                            }
+                            if (!dialogContext.mounted) return;
+                            if (activationError == null) {
+                              Navigator.pop(dialogContext);
+                              if (mounted) setState(() {});
+                              _showMessage('Лицензия успешно активирована.');
+                            } else if (mounted) {
+                              setState(() {});
+                            }
+                          },
+                          icon: checking
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.verified_rounded, size: 18),
+                          label: Text(checking ? 'Проверяем…' : 'Активировать'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                        onPressed: checking ? null : () async {
+                          FocusScope.of(context).unfocus();
+                          setDialogState(() { checking = true; errorText = null; });
+                          String? checkError;
+                          try {
+                            await licensing.refreshTimeAndLicense(forceNetworkCheck: true);
+                            if (licensing.clockBlocked) checkError = licensing.status;
+                            else checkError = 'Проверка завершена: ${licensing.status}';
+                          } catch (error) {
+                            checkError = 'Не удалось проверить время: $error';
+                          }
+                          if (!dialogContext.mounted) return;
+                          setDialogState(() { checking = false; errorText = checkError; });
+                          if (mounted) setState(() {});
+                        },
+                        icon: const Icon(Icons.sync_rounded, size: 18),
+                        label: const Text('Проверить время'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
     );
     controller.dispose();
     emailController.dispose();
@@ -1640,7 +1813,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       Icon(allowed ? Icons.verified_user_outlined : Icons.lock_outline_rounded, color: allowed ? const Color(0xFFB5F36D) : const Color(0xFFFF8178), size: 22),
       const SizedBox(width: 10),
       Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14))),
-      OutlinedButton(onPressed: _showLicenseDialog, child: Text(allowed ? 'Управление' : 'Активировать')),
+      OutlinedButton(onPressed: _showLicenseDialog, child: Text(allowed ? 'Лицензия' : 'Активировать')),
     ])));
   }
 
@@ -1737,16 +1910,40 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                           const SizedBox(width: 10),
                           Expanded(child: _metricCard('Ошибки', '$failedCount', Icons.error_outline_rounded, color: const Color(0xFFFF8178))),
                         ]),
-                        const SizedBox(height: 12),
-                        Wrap(spacing: 8, runSpacing: 8, children: <Widget>[
-                          OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _analyzeQueuedVideos, icon: const Icon(Icons.manage_search_rounded), label: const Text('Анализ видео')),
-                          OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _recommendProfile, icon: const Icon(Icons.auto_awesome_outlined), label: const Text('Подобрать профиль')),
-                          OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _createTestClip, icon: const Icon(Icons.science_outlined), label: const Text('Тест 20 секунд')),
-                          OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _compareProfilesOnTestClip, icon: const Icon(Icons.compare_rounded), label: const Text('Сравнить профили')),
-                          OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _openHistory, icon: const Icon(Icons.history_rounded), label: const Text('История экспорта')),
-                          OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _openPublishingManager, icon: const Icon(Icons.campaign_outlined), label: const Text('Публикации')),
-                          OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _compareLatestOutput, icon: const Icon(Icons.compare_arrows_rounded), label: const Text('Проверить результат')),
-                        ]),
+                        const SizedBox(height: 8),
+                        if (Platform.isAndroid)
+                          Card(
+                            child: Theme(
+                              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                              child: ExpansionTile(
+                                tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+                                childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                                leading: const Icon(Icons.tune_rounded, color: Color(0xFFB5F36D)),
+                                title: const Text('Дополнительные инструменты', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                                children: <Widget>[
+                                  Wrap(spacing: 6, runSpacing: 6, children: <Widget>[
+                                    OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _analyzeQueuedVideos, icon: const Icon(Icons.manage_search_rounded, size: 17), label: const Text('Анализ')),
+                                    OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _recommendProfile, icon: const Icon(Icons.auto_awesome_outlined, size: 17), label: const Text('Профиль')),
+                                    OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _createTestClip, icon: const Icon(Icons.science_outlined, size: 17), label: const Text('Тест 20 с')),
+                                    OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _compareProfilesOnTestClip, icon: const Icon(Icons.compare_rounded, size: 17), label: const Text('Сравнить')),
+                                    OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _openHistory, icon: const Icon(Icons.history_rounded, size: 17), label: const Text('История')),
+                                    OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _openPublishingManager, icon: const Icon(Icons.campaign_outlined, size: 17), label: const Text('Публикации')),
+                                    OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _compareLatestOutput, icon: const Icon(Icons.compare_arrows_rounded, size: 17), label: const Text('Результат')),
+                                  ]),
+                                ],
+                              ),
+                            ),
+                          )
+                        else
+                          Wrap(spacing: 8, runSpacing: 8, children: <Widget>[
+                            OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _analyzeQueuedVideos, icon: const Icon(Icons.manage_search_rounded), label: const Text('Анализ видео')),
+                            OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _recommendProfile, icon: const Icon(Icons.auto_awesome_outlined), label: const Text('Подобрать профиль')),
+                            OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _createTestClip, icon: const Icon(Icons.science_outlined), label: const Text('Тест 20 секунд')),
+                            OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _compareProfilesOnTestClip, icon: const Icon(Icons.compare_rounded), label: const Text('Сравнить профили')),
+                            OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _openHistory, icon: const Icon(Icons.history_rounded), label: const Text('История экспорта')),
+                            OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _openPublishingManager, icon: const Icon(Icons.campaign_outlined), label: const Text('Публикации')),
+                            OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _compareLatestOutput, icon: const Icon(Icons.compare_arrows_rounded), label: const Text('Проверить результат')),
+                          ]),
                         const SizedBox(height: 18),
                         _buildQueueCard(doneCount),
                         if (_isEncoding) ...<Widget>[
@@ -1879,8 +2076,8 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       ...ExportProfile.values.map((profile) {
         final selected = _profile == profile;
         final icon = switch (profile) { ExportProfile.highQuality => Icons.high_quality_rounded, ExportProfile.balanced => Icons.balance_rounded, ExportProfile.compact => Icons.sd_storage_rounded, ExportProfile.youtube1080 => Icons.smart_display_rounded, ExportProfile.lossless => Icons.verified_rounded, ExportProfile.custom => Icons.tune_rounded };
-        return Padding(padding: const EdgeInsets.only(bottom: 8), child: Material(color: selected ? const Color(0xFFB5F36D).withValues(alpha: 0.09) : const Color(0xFF131510), borderRadius: BorderRadius.circular(15), child: InkWell(borderRadius: BorderRadius.circular(15), onTap: _isEncoding ? null : () { setState(() => _profile = profile); _persistState(); }, child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(borderRadius: BorderRadius.circular(15), border: Border.all(color: selected ? const Color(0xFFB5F36D) : const Color(0xFF30342B))), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-          Icon(icon, color: selected ? const Color(0xFFB5F36D) : const Color(0xFF858B7D), size: 21), const SizedBox(width: 11), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text(profile.title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: selected ? const Color(0xFFF3F4EE) : const Color(0xFFCFD2C9))), const SizedBox(height: 4), Text(profile.description, style: const TextStyle(fontSize: 11, height: 1.35, color: Color(0xFF858B7D)))])), const SizedBox(width: 8), Icon(selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, color: selected ? const Color(0xFFB5F36D) : const Color(0xFF505548), size: 19),
+        return Padding(padding: const EdgeInsets.only(bottom: 6), child: Material(color: selected ? const Color(0xFFB5F36D).withValues(alpha: 0.09) : const Color(0xFF131510), borderRadius: BorderRadius.circular(15), child: InkWell(borderRadius: BorderRadius.circular(15), onTap: _isEncoding ? null : () { setState(() => _profile = profile); _persistState(); }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10), constraints: const BoxConstraints(minHeight: 66), decoration: BoxDecoration(borderRadius: BorderRadius.circular(15), border: Border.all(color: selected ? const Color(0xFFB5F36D) : const Color(0xFF30342B))), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+          Icon(icon, color: selected ? const Color(0xFFB5F36D) : const Color(0xFF858B7D), size: 21), const SizedBox(width: 11), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text(profile.title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: selected ? const Color(0xFFF3F4EE) : const Color(0xFFCFD2C9))), const SizedBox(height: 4), Text(profile.description, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, height: 1.3, color: Color(0xFF858B7D)))])), const SizedBox(width: 8), Icon(selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, color: selected ? const Color(0xFFB5F36D) : const Color(0xFF505548), size: 19),
         ])))));
       }),
     ])));
@@ -1893,7 +2090,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         Text('VIDEOFORGE', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 2.4, color: Color(0xFFB5F36D))),
         SizedBox(height: 3),
-        Text('Видео. Под твоим контролем.', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800, letterSpacing: -0.6)),
+        Text('Конвертация видео', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, letterSpacing: -0.45)),
       ])),
       if (_isPreparing) const SizedBox(width: 19, height: 19, child: CircularProgressIndicator(strokeWidth: 2)) else Container(padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8), decoration: BoxDecoration(color: const Color(0xFFB5F36D).withValues(alpha: 0.09), borderRadius: BorderRadius.circular(30), border: Border.all(color: const Color(0xFF30342B))), child: const Row(mainAxisSize: MainAxisSize.min, children: <Widget>[Icon(Icons.shield_outlined, size: 15, color: Color(0xFFB5F36D)), SizedBox(width: 6), Text('ЛОКАЛЬНО', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.7, color: Color(0xFFB5F36D))) ])),
     ]);
@@ -1902,6 +2099,51 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   Widget _buildHeroCard() {
     return Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(26), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: <Color>[Color(0xFF252A1E), Color(0xFF1A1C18), Color(0xFF171914)]), border: Border.all(color: const Color(0xFF3B4430))), child: Padding(padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 14 : 26), child: LayoutBuilder(builder: (context, constraints) {
       final compact = constraints.maxWidth < 580;
+      if (compact && Platform.isAndroid) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const Row(
+              children: <Widget>[
+                Icon(Icons.movie_creation_outlined, color: Color(0xFFB5F36D), size: 24),
+                SizedBox(width: 9),
+                Expanded(child: Text('Пакетная обработка', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
+              ],
+            ),
+            const SizedBox(height: 5),
+            const Text('Добавьте видео и выберите качество.', style: TextStyle(fontSize: 12, height: 1.35, color: Color(0xFFB5B9AE))),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 46,
+              child: FilledButton.icon(
+                onPressed: _isEncoding || _isPreparing ? null : _pickVideos,
+                icon: const Icon(Icons.add_rounded),
+                label: Text(_jobs.isEmpty ? 'Добавить видео' : 'Добавить ещё'),
+              ),
+            ),
+            if (_jobs.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 44,
+                child: OutlinedButton.icon(
+                  onPressed: _isEncoding || _isPreparing ? null : _encodeAll,
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: const Text('Запустить очередь'),
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: <Widget>[
+                TextButton.icon(onPressed: _isEncoding ? null : _configureCustomProfile, icon: const Icon(Icons.tune_rounded, size: 17), label: const Text('Мой профиль')),
+                TextButton.icon(onPressed: _exportDiagnostics, icon: const Icon(Icons.receipt_long_outlined, size: 17), label: const Text('Диагностика')),
+              ],
+            ),
+          ],
+        );
+      }
       final intro = Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: const Color(0xFFB5F36D).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(30)), child: const Text('ПАКЕТНАЯ ОБРАБОТКА', style: TextStyle(color: Color(0xFFB5F36D), fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2))),
         const SizedBox(height: 17),
@@ -1928,6 +2170,46 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   }
 
   Widget _buildOutputCard() {
+    if (Platform.isAndroid) {
+      final estimate = _formatBytes((_jobs.fold<int>(0, (sum, job) => sum + job.bytes) *
+          (_profile.isLossless ? 4.0 : _profile == ExportProfile.compact ? 0.65 : 1.1)).round());
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFB5F36D).withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.photo_library_outlined, color: Color(0xFFB5F36D)),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const Text('Сохранение результата', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 3),
+                    const Text('Галерея → альбом VideoForge', style: TextStyle(fontSize: 12, color: Color(0xFFB5F36D))),
+                    const SizedBox(height: 3),
+                    Text('Оценка размера: $estimate', style: const TextStyle(fontSize: 11, color: Color(0xFF858B7D))),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Информация о сохранении',
+                onPressed: () => _showMessage('Готовые видео сохраняются в галерею телефона, альбом VideoForge.'),
+                icon: const Icon(Icons.info_outline_rounded),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(17),
@@ -1970,7 +2252,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                         ? 'Videos/Processed_New'
                         : Platform.isMacOS
                             ? 'Movies/Processed_New'
-                            : 'Папка приложения / Processed_New',
+                            : 'Галерея · альбом VideoForge',
                     style: const TextStyle(
                       color: Color(0xFFB5F36D),
                       fontSize: 12,
