@@ -16,6 +16,8 @@ class VideoForgeLicensing {
   static const clockTolerance = Duration(hours: 1);
   static const _trialStartKey = 'videoforge.license.trialStartUtc';
   static const _lastTimeKey = 'videoforge.license.lastObservedUtc';
+  static const _lastNetworkCheckKey = 'videoforge.license.lastNetworkCheckUtc';
+  static const _networkCheckInterval = Duration(hours: 24);
   static const _clockBlockedKey = 'videoforge.license.clockBlocked';
   static const _licenseKey = 'videoforge.license.signedToken';
   static const _installIdKey = 'videoforge.license.installId';
@@ -61,9 +63,16 @@ class VideoForgeLicensing {
     await refreshTimeAndLicense();
   }
 
-  Future<void> refreshTimeAndLicense() async {
+  Future<void> refreshTimeAndLicense({bool forceNetworkCheck = false}) async {
     final localNow = DateTime.now().toUtc();
-    final networkTimes = await _fetchNetworkTimes();
+    final lastNetworkCheckMs = _prefs.getInt(_lastNetworkCheckKey);
+    final shouldCheckNetwork = forceNetworkCheck || lastNetworkCheckMs == null ||
+        localNow.difference(DateTime.fromMillisecondsSinceEpoch(lastNetworkCheckMs, isUtc: true)) >= _networkCheckInterval ||
+        localNow.isBefore(DateTime.fromMillisecondsSinceEpoch(lastNetworkCheckMs, isUtc: true));
+    final networkTimes = shouldCheckNetwork ? await _fetchNetworkTimes() : <DateTime>[];
+    if (shouldCheckNetwork) {
+      await _prefs.setInt(_lastNetworkCheckKey, localNow.millisecondsSinceEpoch);
+    }
     DateTime effectiveNow = localNow;
     if (networkTimes.isNotEmpty) {
       networkTimes.sort();

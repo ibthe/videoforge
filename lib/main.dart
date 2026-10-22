@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:cross_file/cross_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:gal/gal.dart';
 import 'package:flutter/material.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/ffprobe_kit.dart';
@@ -243,9 +244,18 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
         _restoreQueue(savedQueue);
       }
       final savedOutput = _preferences?.getString(_prefOutputDirectory);
-      final directory = savedOutput != null && savedOutput.trim().isNotEmpty
-          ? Directory(savedOutput)
-          : await _resolveOutputDirectory();
+      final resolvedDefault = await _resolveOutputDirectory();
+      final savedPath = savedOutput?.trim();
+      final isLegacyDefault = savedPath != null && savedPath.isNotEmpty && (
+        (Platform.isWindows && savedPath.replaceAll('/', '\\').toLowerCase().endsWith('videos\\processed_new')) ||
+        (Platform.isMacOS && savedPath.replaceAll('\\', '/').toLowerCase().endsWith('movies/processed_new')) ||
+        ((Platform.isAndroid || Platform.isIOS) && savedPath.replaceAll('\\', '/').toLowerCase().endsWith('/processed_new'))
+      );
+      final directory = (Platform.isAndroid || Platform.isIOS)
+          ? resolvedDefault
+          : savedPath != null && savedPath.isNotEmpty && !isLegacyDefault
+              ? Directory(savedPath)
+              : resolvedDefault;
       await directory.create(recursive: true);
 
       if (!mounted) return;
@@ -359,12 +369,9 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
 
   Future<void> _persistState() async {
     try {
-      // If preferences could not be initialized during startup, do not repeatedly
-      // reopen the platform channel from the fallback path. The app can still open;
-      // state persistence can be retried after the user continues.
       final prefs = _preferences;
       if (prefs == null) {
-        debugPrint('VideoForge: preferences are unavailable; skipping state persistence.');
+        debugPrint('VideoForge: preferences are not initialized; skipping state persistence.');
         return;
       }
       await prefs.setString(_prefProfile, _profile.name);
@@ -388,7 +395,6 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       await prefs.setString(_prefQueue, jsonEncode(queue));
       await prefs.setString(_prefHistory, jsonEncode(_exportHistory.take(500).toList()));
     } catch (error, stackTrace) {
-      // Keep the app usable and expose the real cause in Android logcat / debug logs.
       debugPrint('VideoForge: failed to persist settings: $error');
       debugPrintStack(stackTrace: stackTrace);
       if (mounted) _showMessage('Не удалось сохранить настройки: $error');
@@ -480,30 +486,44 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
 
   Future<Directory> _resolveOutputDirectory() async {
     if (Platform.isWindows) {
+      final dDrive = Directory(r'D:\VideoForge');
+      try {
+        if (await Directory(r'D:\').exists()) return dDrive;
+      } catch (_) {}
       final home = Platform.environment['USERPROFILE'];
-
       if (home != null && home.isNotEmpty) {
-        return Directory(
-          p.join(home, 'Videos', 'Processed_New'),
-        );
+        return Directory(p.join(home, 'Videos', 'VideoForge'));
       }
     }
 
     if (Platform.isMacOS) {
       final home = Platform.environment['HOME'];
-
       if (home != null && home.isNotEmpty) {
-        return Directory(
-          p.join(home, 'Movies', 'Processed_New'),
-        );
+        return Directory(p.join(home, 'Downloads', 'VideoForge'));
       }
     }
 
+    // Android stores a working copy inside the app sandbox; after encoding,
+    // the finished video is copied into the public media gallery.
     final documents = await getApplicationDocumentsDirectory();
+    return Directory(p.join(documents.path, 'VideoForge'));
+  }
 
-    return Directory(
-      p.join(documents.path, 'Processed_New'),
-    );
+  Future<void> _saveToAndroidGallery(String path) async {
+    if (!Platform.isAndroid) return;
+    try {
+      var hasAccess = await Gal.hasAccess(toAlbum: true);
+      if (!hasAccess) hasAccess = await Gal.requestAccess(toAlbum: true);
+      if (!hasAccess) {
+        _showMessage('Видео обработано, но нет разрешения на сохранение в галерею. Разрешите доступ к фото и видео.');
+        return;
+      }
+      await Gal.putVideo(path, album: 'VideoForge');
+      _diagnosticLog.add('${DateTime.now().toIso8601String()} GALLERY: сохранено ${p.basename(path)}');
+    } catch (error) {
+      _diagnosticLog.add('${DateTime.now().toIso8601String()} GALLERY ERROR: $error');
+      if (mounted) _showMessage('Видео обработано, но не удалось сохранить его в галерею: $error');
+    }
   }
 
   
@@ -694,6 +714,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                 _diagnosticLog.add('${DateTime.now().toIso8601String()} WARNING: длительность результата отличается на ${durationDelta.toStringAsFixed(2)} сек. для ${job.name}');
               }
             }
+            await _saveToAndroidGallery(outputPath);
             final exportedAt = DateTime.now().toIso8601String();
             _diagnosticLog.add('$exportedAt VERIFIED: ${job.name} -> ${p.basename(outputPath)} (${_formatBytes(outputBytes)}); выходной файл существует, не пустой и читается FFprobe.');
             _exportHistory.insert(0, <String, Object?>{'date': exportedAt, 'source': job.path, 'sourceName': job.name, 'output': outputPath, 'sourceBytes': job.bytes, 'outputBytes': outputBytes, 'profile': _profile.name});
@@ -1569,7 +1590,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
         actions: <Widget>[
           TextButton(onPressed: checking ? null : () async {
             setDialogState(() { checking = true; errorText = null; });
-            await licensing.refreshTimeAndLicense();
+            await licensing.refreshTimeAndLicense(forceNetworkCheck: true);
             if (!dialogContext.mounted) return;
             setDialogState(() { checking = false; errorText = licensing.status; });
             if (!licensing.clockBlocked) {
@@ -1599,17 +1620,17 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   Widget _buildLicenseCard() {
     final license = _licensing;
     final allowed = license?.isAllowed ?? false;
-    final title = license == null ? 'Проверка лицензии…' : license.isLicensed ? 'Лицензия активна' : license.isTrialActive ? 'Пробный период · ${license.trialDaysLeft} дн.' : 'Требуется лицензия';
-    final description = license?.status ?? 'Состояние лицензии загружается.';
-    return Card(child: Padding(padding: const EdgeInsets.all(18), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-      Icon(allowed ? Icons.verified_user_outlined : Icons.lock_outline_rounded, color: allowed ? const Color(0xFFB5F36D) : const Color(0xFFFF8178), size: 25),
-      const SizedBox(width: 12),
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-        Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-        const SizedBox(height: 5),
-        Text(description, style: const TextStyle(fontSize: 12, color: Color(0xFFB5B9AE), height: 1.4)),
-      ])),
-      const SizedBox(width: 8),
+    final title = license == null
+        ? 'Лицензия'
+        : license.isLicensed
+            ? 'Лицензия активна'
+            : license.isTrialActive
+                ? 'Пробный период · ${license.trialDaysLeft} дн.'
+                : 'Требуется лицензия';
+    return Card(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), child: Row(children: <Widget>[
+      Icon(allowed ? Icons.verified_user_outlined : Icons.lock_outline_rounded, color: allowed ? const Color(0xFFB5F36D) : const Color(0xFFFF8178), size: 22),
+      const SizedBox(width: 10),
+      Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14))),
       OutlinedButton(onPressed: _showLicenseDialog, child: Text(allowed ? 'Управление' : 'Активировать')),
     ])));
   }
@@ -1877,7 +1898,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
         const SizedBox(height: 17),
         Text('Подготовь видео\nк следующему шагу.', style: Theme.of(context).textTheme.headlineMedium),
         const SizedBox(height: 10),
-        const Text('Добавь один файл или целую папку видео. Выбери профиль — VideoForge обработает очередь на этом устройстве.', style: TextStyle(fontSize: 13, height: 1.55, color: Color(0xFFB5B9AE))),
+        const Text('Добавь видео, настрой качество и запусти обработку.', style: TextStyle(fontSize: 13, height: 1.55, color: Color(0xFFB5B9AE))),
         const SizedBox(height: 19),
         Wrap(spacing: 7, runSpacing: 7, children: const <Widget>[_FormatChip(label: 'MP4'), _FormatChip(label: 'MOV'), _FormatChip(label: 'MKV'), _FormatChip(label: 'M4V'), _FormatChip(label: 'AVI'), _FormatChip(label: 'WEBM')]),
         const SizedBox(height: 22),

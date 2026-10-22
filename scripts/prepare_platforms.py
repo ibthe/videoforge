@@ -186,9 +186,17 @@ def set_android_target() -> None:
             text,
             count=1,
         )
-        internet_permission = '<uses-permission android:name="android.permission.INTERNET" />'
-        if internet_permission not in text:
-            text = re.sub(r'(<manifest\b[^>]*>)', r'\1\n    ' + internet_permission, text, count=1)
+        permissions = (
+            '<uses-permission android:name="android.permission.INTERNET" />',
+            '<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />',
+        )
+        for permission in permissions:
+            permission_name = re.search(r'android:name="([^"]+)"', permission).group(1)
+            if permission_name not in text:
+                text = re.sub(r'(<manifest\b[^>]*>)', r'\1\n    ' + permission, text, count=1)
+        # Required by Gal for album writes on Android 10 (API 29); ignored on newer Android versions.
+        if 'android:requestLegacyExternalStorage=' not in text:
+            text = re.sub(r'(<application\b)', r'\1 android:requestLegacyExternalStorage="true"', text, count=1)
         manifest.write_text(text, encoding="utf-8")
 
 
