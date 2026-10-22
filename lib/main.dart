@@ -1576,7 +1576,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       barrierDismissible: !licensing.clockBlocked,
       builder: (dialogContext) => StatefulBuilder(builder: (context, setDialogState) => AlertDialog(
         title: const Text('Лицензия VideoForge'),
-        content: SizedBox(width: 480, child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+        content: SizedBox(width: MediaQuery.sizeOf(context).width < 600 ? double.maxFinite : 480, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
           Text(licensing.status),
           const SizedBox(height: 8),
           SelectableText('ID установки: ${licensing.installId ?? 'не определён'}', style: const TextStyle(fontSize: 12)),
@@ -1586,7 +1586,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
           if (licensing.clockBlocked) const Text('Активация заблокирована до проверки правильных часов через интернет.', style: TextStyle(color: Color(0xFFFF8178))),
           TextField(controller: controller, enabled: !checking && !licensing.clockBlocked, autocorrect: false, enableSuggestions: false, decoration: const InputDecoration(labelText: 'Лицензионный ключ', hintText: 'VF1.payload.signature')),
           if (errorText != null) ...<Widget>[const SizedBox(height: 8), Text(errorText!, style: const TextStyle(color: Color(0xFFFF8178)))],
-        ])),
+        ]))),
         actions: <Widget>[
           TextButton(onPressed: checking ? null : () async {
             setDialogState(() { checking = true; errorText = null; });
@@ -1598,8 +1598,17 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
             }
           }, child: const Text('Проверить время')),
           if (!licensing.clockBlocked) TextButton(onPressed: checking ? null : () => Navigator.pop(dialogContext), child: const Text('Закрыть')),
-          FilledButton(onPressed: checking || licensing.clockBlocked ? null : () async {
+          FilledButton(onPressed: checking ? null : () async {
             setDialogState(() { checking = true; errorText = null; });
+            if (licensing.clockBlocked) {
+              await licensing.refreshTimeAndLicense(forceNetworkCheck: true);
+              if (!dialogContext.mounted) return;
+              if (mounted) setState(() {});
+              if (licensing.clockBlocked) {
+                setDialogState(() { checking = false; errorText = licensing.status; });
+                return;
+              }
+            }
             final error = await licensing.activate(controller.text, emailController.text);
             if (!dialogContext.mounted) return;
             setDialogState(() { checking = false; errorText = error; });
@@ -1701,14 +1710,14 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                   child: LayoutBuilder(builder: (context, constraints) {
                     final wide = constraints.maxWidth >= 820;
                     return ListView(
-                      padding: EdgeInsets.fromLTRB(wide ? 34 : 18, 24, wide ? 34 : 18, 36),
+                      padding: EdgeInsets.fromLTRB(wide ? 28 : 12, wide ? 20 : 10, wide ? 28 : 12, wide ? 28 : 16),
                       children: <Widget>[
                         _buildHeader(),
-                        const SizedBox(height: 14),
+                        SizedBox(height: wide ? 12 : 7),
                         _buildLicenseCard(),
-                        const SizedBox(height: 20),
+                        SizedBox(height: wide ? 16 : 8),
                         _buildHeroCard(),
-                        const SizedBox(height: 18),
+                        SizedBox(height: wide ? 16 : 8),
                         if (wide)
                           Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
                             Expanded(flex: 6, child: _buildProfileCard()),
@@ -1717,10 +1726,10 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                           ])
                         else ...<Widget>[
                           _buildProfileCard(),
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 8),
                           _buildOutputCard(),
                         ],
-                        const SizedBox(height: 18),
+                        SizedBox(height: wide ? 16 : 8),
                         Row(children: <Widget>[
                           Expanded(child: _metricCard('В очереди', '${_jobs.length}', Icons.video_library_outlined)),
                           const SizedBox(width: 10),
@@ -1864,7 +1873,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   }
 
   Widget _buildProfileCard() {
-    return Card(child: Padding(padding: const EdgeInsets.all(22), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+    return Card(child: Padding(padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 14 : 22), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
       Row(children: <Widget>[Container(width: 38, height: 38, decoration: BoxDecoration(color: const Color(0xFFB5F36D).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.tune_rounded, color: Color(0xFFB5F36D))), const SizedBox(width: 12), const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text('Профиль экспорта', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)), SizedBox(height: 3), Text('Выберите, что важнее: качество или размер', style: TextStyle(fontSize: 11, color: Color(0xFF858B7D))) ]))]),
       const SizedBox(height: 18),
       ...ExportProfile.values.map((profile) {
@@ -1891,7 +1900,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   }
 
   Widget _buildHeroCard() {
-    return Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(26), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: <Color>[Color(0xFF252A1E), Color(0xFF1A1C18), Color(0xFF171914)]), border: Border.all(color: const Color(0xFF3B4430))), child: Padding(padding: const EdgeInsets.all(26), child: LayoutBuilder(builder: (context, constraints) {
+    return Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(26), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: <Color>[Color(0xFF252A1E), Color(0xFF1A1C18), Color(0xFF171914)]), border: Border.all(color: const Color(0xFF3B4430))), child: Padding(padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 14 : 26), child: LayoutBuilder(builder: (context, constraints) {
       final compact = constraints.maxWidth < 580;
       final intro = Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: const Color(0xFFB5F36D).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(30)), child: const Text('ПАКЕТНАЯ ОБРАБОТКА', style: TextStyle(color: Color(0xFFB5F36D), fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2))),
