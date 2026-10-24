@@ -17,8 +17,316 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'licensing.dart';
 
-void main() {
+// Lightweight built-in localization; language choice is saved on this device.
+final ValueNotifier<String> videoForgeLanguage = ValueNotifier<String>('ru');
+String _activeLanguage = 'ru';
+const Map<String, Map<String, String>> _translations = {
+  'en': {
+    'Конвертация видео': 'Video conversion',
+    'ЛОКАЛЬНО': 'ON DEVICE',
+    'Пакетная обработка': 'Batch processing',
+    'Добавьте видео и выберите качество.': 'Add videos and choose quality.',
+    'Добавить видео': 'Add videos',
+    'Добавить ещё': 'Add more',
+    'Профиль экспорта': 'Export profile',
+    'Выберите, что важнее: качество или размер': 'Choose what matters: quality or size',
+    'Высокое качество': 'High quality',
+    'Сбалансированный': 'Balanced',
+    'Компактный размер': 'Smaller file',
+    'YouTube 1080p': 'YouTube 1080p',
+    'Без потерь — новое кодирование': 'Lossless — re-encoding',
+    'Мой профиль': 'My profile',
+    'Меньше потерь качества, файл может быть больше.': 'Less quality loss; file may be larger.',
+    'Рекомендуемый баланс качества и размера.': 'Recommended balance of quality and size.',
+    'Меньше места на диске, заметнее потери качества.': 'Uses less disk space, with more visible quality loss.',
+    'MP4 до 1080p с сохранением пропорций.': 'MP4 up to 1080p, preserving aspect ratio.',
+    'FFV1 в MKV: новое кодирование видео без потерь. Файл может быть значительно больше; не все платформы принимают этот формат.': 'FFV1 in MKV: lossless video encoding. Files can be much larger; some platforms do not support this format.',
+    'Пользовательские настройки кодирования. Настройте CRF и скорость в конструкторе профиля.': 'Custom encoding settings. Adjust CRF and speed in the profile builder.',
+    'Анализ': 'Analyze',
+    'Быстро': 'Fast',
+    'Отмена': 'Cancel',
+    'Закрыть': 'Close',
+    'История': 'History',
+    'Профиль': 'Profile',
+    'Исходник': 'Source',
+    'Очистить': 'Clear',
+    'Сравнить': 'Compare',
+    'РЕЗУЛЬТАТ': 'OUTPUT',
+    'Результат': 'Output',
+    'Сохранить': 'Save',
+    'Тест 20 с': '20 s test',
+    'Публикации': 'Publishing',
+    'Диагностика': 'Diagnostics',
+    'ID установки': 'Installation ID',
+    'Анализ видео': 'Video analysis',
+    'Очень быстро': 'Very fast',
+    'Создать тест': 'Create test',
+    'Очередь видео': 'Video queue',
+    'Готов к работе': 'Ready',
+    'Пока нет видео': 'No videos yet',
+    'Сбалансировано': 'Balanced',
+    'Тест 20 секунд': '20-second test',
+    'Кадр недоступен': 'Frame unavailable',
+    'Обработка видео': 'Video processing',
+    'Проверить время': 'Check time',
+    'История экспорта': 'Export history',
+    'Начать сравнение': 'Start comparison',
+    'Сравнить профили': 'Compare profiles',
+    'Запустить очередь': 'Start queue',
+    'Оставить как есть': 'Keep as is',
+    'Подобрать профиль': 'Suggest profile',
+    'Применить профиль': 'Apply profile',
+    'Сохранить профиль': 'Save profile',
+    'Тестовый фрагмент': 'Test clip',
+    'Активация лицензии': 'License activation',
+    'ПАКЕТНАЯ ОБРАБОТКА': 'BATCH PROCESSING',
+    'История пока пуста.': 'History is empty.',
+    'Конструктор профиля': 'Profile builder',
+    'Менеджер публикаций': 'Publishing manager',
+    'Проверить результат': 'Review result',
+    'Результаты сравнения': 'Comparison results',
+    'Скорость кодирования': 'Encoding speed',
+    'Технические сведения': 'Technical details',
+    'Выполняется проверка…': 'Checking…',
+    'Готовый файл сохранён': 'Output saved',
+    'Медленно, эффективнее': 'Slow, more efficient',
+    'Отпустите файлы здесь': 'Drop files here',
+    'Профили для сравнения': 'Profiles to compare',
+    'Сохранение результата': 'Saving output',
+    'Папка для готовых видео': 'Output folder',
+    'Рекомендация VideoForge': 'VideoForge recommendation',
+    'Дополнительные инструменты': 'More tools',
+    'Галерея → альбом VideoForge': 'Gallery → VideoForge album',
+    'Без загрузки файлов в облако': 'Files stay on your device',
+    'Сравнение исходника и результата': 'Compare source and output',
+    'MP4 · MOV · MKV · M4V · AVI · WEBM': 'MP4 · MOV · MKV · M4V · AVI · WEBM',
+    'Добавьте один или несколько файлов': 'Add one or more files',
+    'Подготовь видео\\nк следующему шагу.': 'Prepare your video\\nfor the next step.',
+    'Обработка выполняется локально на вашем устройстве': 'Processing happens on your device',
+    'Добавь видео, настрой качество и запусти обработку.': 'Add videos, set quality, and start processing.',
+    'Сначала обработать первые 20 секунд, чтобы проверить настройки и примерный размер файла.': 'Process the first 20 seconds to check settings and approximate file size.',
+    'CRF: ниже — выше качество и обычно больше размер. Доступный диапазон этого профиля: 0–35.': 'CRF: lower means higher quality and usually a larger file. Range: 0–35.',
+    'Сохраняются локально в приложении. Статистика платформ сюда автоматически не импортируется.': 'Saved locally in the app. Platform statistics are not imported automatically.',
+    'Рекомендация основана на доступных метаданных и размере файла, а не гарантирует лучший результат для любого видео.': 'This recommendation uses available metadata and file size; it cannot guarantee the best result for every video.',
+    'Этот профиль использует H.264 в MP4. CRF 0 зависит от сборки кодека и не гарантируется как lossless; для строгого режима без потерь выбирайте FFV1.': 'This profile uses H.264 in MP4. CRF 0 is not guaranteed lossless; choose FFV1 for strict lossless encoding.',
+    'Один и тот же 20-секундный фрагмент будет обработан каждым выбранным профилем. Сравнение показывает размер и время, но не гарантирует одинаковое визуальное качество.': 'The same 20-second clip will be processed with each selected profile. Comparison shows size and time, not guaranteed identical visual quality.',
+    'Кадры показывают только одну точку примерно в середине видео. Это визуальная проверка, а не математическое доказательство отсутствия потерь. Для FFV1 исходные декодированные кадры должны сохраняться без потерь.': 'Frames show one point near the middle of the video. This is a visual check, not mathematical proof of no loss. FFV1 should preserve decoded frames losslessly.',
+    'ОРИГИНАЛ': 'SOURCE',
+    'Размер неизвестен': 'Size unknown',
+    'Исходное видео': 'Source video',
+    'Видео': 'Video',
+    'Название публикации': 'Publication title',
+    'Описание': 'Description',
+    'Теги (через запятую)': 'Tags (comma-separated)',
+    'Заметки / результаты теста': 'Notes / test results',
+    'Email лицензии': 'License email',
+    'Лицензионный ключ': 'License key',
+    'Информация о сохранении': 'Saving information',
+    'Выбрать папку результата': 'Choose output folder',
+    'Открыть папку': 'Open folder',
+    'Как сохранить результат': 'How to save output',
+    'Анализ и сведения о видео': 'Video analysis and details',
+    'Поделиться или сохранить видео': 'Share or save video',
+    'Убрать из списка': 'Remove from list',
+    'Автоматическая проверка свободного места недоступна на этом устройстве.': 'Automatic free-space check is unavailable on this device.',
+    'В очереди нет доступных исходных видео.': 'No available source videos in the queue.',
+    'Вариант публикации сохранён.': 'Publication draft saved.',
+    'Готовые видео сохраняются в галерею телефона, альбом VideoForge.': 'Finished videos are saved to your phone gallery, VideoForge album.',
+    'Дождитесь завершения кодирования перед добавлением файлов.': 'Wait for encoding to finish before adding files.',
+    'Лицензия ещё загружается. Подождите несколько секунд и повторите.': 'License is still loading. Wait a few seconds and try again.',
+    'Лицензия успешно активирована.': 'License activated successfully.',
+    'Нет готового файла для проверки.': 'No completed file to review.',
+    'Папка результата сохранена.': 'Output folder saved.',
+    'Подготавливаем кадры для сравнения…': 'Preparing frames for comparison…',
+    'Поддерживаются MP4, MOV, MKV, M4V, AVI и WEBM.': 'Supported formats: MP4, MOV, MKV, M4V, AVI, WEBM.',
+    'Пользовательский профиль сохранён.': 'Custom profile saved.',
+    'Проверка лицензии ещё не завершена.': 'License check has not finished yet.',
+    'Сначала выберите видео для кодирования.': 'Select a video to encode first.',
+    'Сначала добавьте видео, чтобы подобрать профиль.': 'Add a video first to get a profile recommendation.',
+    'Эти видео уже есть в очереди.': 'These videos are already in the queue.',
+    'Основная папка недоступна. Используется папка приложения.': 'Main folder unavailable. Using the app folder.',
+    'Требуется доступ к хранилищу': 'Storage access required',
+    'Готово к работе': 'Ready',
+    'Запускаем кодирование…': 'Starting encoding…',
+    'Отменяем текущий файл…': 'Cancelling current file…',
+    'Подготавливаем папку для результатов…': 'Preparing output folder…',
+    'Папка результата изменена': 'Output folder changed',
+    'Активировать': 'Activate',
+    'Проверяем…': 'Checking…',
+    'Введите email, на который выпущен ключ.': 'Enter the email address the key was issued to.',
+    'Проверьте адрес email.': 'Check the email address.',
+    'Введите лицензионный ключ.': 'Enter the license key.',
+    'не определён': 'not detected',
+    'Лицензия': 'License',
+    'Лицензия активна': 'License active',
+    'Пробный период': 'Trial period',
+    'Требуется лицензия': 'License required',
+    'Пробный период завершён. Введите лицензионный ключ.': 'Trial period ended. Enter a license key.',
+    'Проверяем лицензию…': 'Checking license…',
+    'Сетевое время проверено.': 'Network time verified.',
+    'Часы устройства спешат. Ключ не изменён; проверка требует корректных часов.': 'Device clock is ahead. The key was not changed; correct time is required.',
+    'Нет сети: используется время устройства.': 'No network: using device time.',
+    'Адрес сервера активации должен использовать HTTPS.': 'The activation server URL must use HTTPS.',
+    'Сервер активации не ответил вовремя. Проверьте интернет и повторите попытку.': 'The activation server timed out. Check your connection and try again.',
+    'Нет соединения с сервером активации.': 'Cannot connect to the activation server.',
+    'дн.': 'days',
+    'не рассчитано': 'not calculated',
+  },
+  'ce': {
+    'Конвертация видео': 'Видеан хийцам',
+    'ЛОКАЛЬНО': 'Локалехь',
+    'Пакетная обработка': 'Пакетан къобалдар',
+    'Добавьте видео и выберите качество.': 'Видео тӀе яккха, кхачан къастам беш.',
+    'Добавить видео': 'Видео тӀе яккха',
+    'Добавить ещё': 'Кхин тӀе яккха',
+    'Профиль экспорта': 'Экспортан профиль',
+    'Выберите, что важнее: качество или размер': 'Хьанна хьалха: кхачество я размер',
+    'Высокое качество': 'Дика кхачество',
+    'Сбалансированный': 'Балансан',
+    'Компактный размер': 'КӀезиг файл',
+    'YouTube 1080p': 'YouTube 1080p',
+    'Без потерь — новое кодирование': 'Дохковалуш йоцу — кхин кодировани',
+    'Мой профиль': 'Сан профиль',
+    'Меньше потерь качества, файл может быть больше.': 'Кхачество кӀезиг дӀадолу; файл дукха хила мегар.',
+    'Рекомендуемый баланс качества и размера.': 'Кхачан а размерийн а дика баланс.',
+    'Меньше места на диске, заметнее потери качества.': 'Дискехь кӀезиг меттиг, кхачество хьалха дӀадолу.',
+    'MP4 до 1080p с сохранением пропорций.': 'MP4 1080p тӀекхаччалц, пропорци йохкуш йоцуш.',
+    'FFV1 в MKV: новое кодирование видео без потерь. Файл может быть значительно больше; не все платформы принимают этот формат.': 'MKV чу FFV1: видео кхачество дӀадолу доцуш кодировани. Файл дукха хила мегар; массо платформашна формат ца ло.',
+    'Пользовательские настройки кодирования. Настройте CRF и скорость в конструкторе профиля.': 'Кодированин хьалххе тохар. Профиль чу CRF а латта а тохар.',
+    'Анализ': 'ТӀедахар',
+    'Быстро': 'Дехьа',
+    'Отмена': 'Йухадаккха',
+    'Закрыть': 'ДӀакъовла',
+    'История': 'ТӀаьхьа',
+    'Профиль': 'Профиль',
+    'Исходник': 'Хьалхарниг',
+    'Очистить': 'Чисте яккха',
+    'Сравнить': 'ТӀекъасто',
+    'РЕЗУЛЬТАТ': 'РЕЗУЛЬТАТ',
+    'Результат': 'Результат',
+    'Сохранить': 'Ларъян',
+    'Тест 20 с': '20 с тест',
+    'Публикации': 'Публикаци',
+    'Диагностика': 'Диагностика',
+    'ID установки': 'ТӀетохар ID',
+    'Анализ видео': 'Видео анализ',
+    'Очень быстро': 'Дукха дехьа',
+    'Создать тест': 'Тест кхолла',
+    'Очередь видео': 'Видео очередь',
+    'Готов к работе': 'Дайарна',
+    'Пока нет видео': 'ХӀинца видео яц',
+    'Сбалансировано': 'Баланс',
+    'Тест 20 секунд': '20 секунд тест',
+    'Кадр недоступен': 'Кадр ца карийна',
+    'Обработка видео': 'Видео къобалдар',
+    'Проверить время': 'Хен хьажа',
+    'История экспорта': 'Экспортан истори',
+    'Начать сравнение': 'ТӀекъасто юкъадала',
+    'Сравнить профили': 'Профилаш тӀекъасто',
+    'Запустить очередь': 'Очередь юкъадала',
+    'Оставить как есть': 'Цхьаьна йита',
+    'Подобрать профиль': 'Профиль талла',
+    'Применить профиль': 'Профиль тӀетоха',
+    'Сохранить профиль': 'Профиль ларъян',
+    'Тестовый фрагмент': 'Тестан клип',
+    'Активация лицензии': 'Лицензи активировани',
+    'ПАКЕТНАЯ ОБРАБОТКА': 'ПАКЕТАН КЪОБАЛДАР',
+    'История пока пуста.': 'Истори яц.',
+    'Конструктор профиля': 'Профиль кхоллар',
+    'Менеджер публикаций': 'Публикацин менеджер',
+    'Проверить результат': 'Результат хьажа',
+    'Результаты сравнения': 'ТӀекъастаран результаташ',
+    'Скорость кодирования': 'Кодированин латта',
+    'Технические сведения': 'Технически хаамаш',
+    'Выполняется проверка…': 'ТӀедахар ду…',
+    'Готовый файл сохранён': 'Файл ларбийна',
+    'Медленно, эффективнее': 'Латта, пайда дукха',
+    'Отпустите файлы здесь': 'Файлаш хӀокху тӀе йита',
+    'Профили для сравнения': 'ТӀекъасто профилаш',
+    'Сохранение результата': 'Результат ларъян',
+    'Папка для готовых видео': 'Файлаш ларъян папка',
+    'Рекомендация VideoForge': 'VideoForge хьехам',
+    'Дополнительные инструменты': 'Кхин инструменташ',
+    'Галерея → альбом VideoForge': 'Галерея → VideoForge альбом',
+    'Без загрузки файлов в облако': 'Файлаш хьан устройстве хӀума',
+    'Сравнение исходника и результата': 'Хьалхарниг а результат а тӀекъасто',
+    'MP4 · MOV · MKV · M4V · AVI · WEBM': 'MP4 · MOV · MKV · M4V · AVI · WEBM',
+    'Добавьте один или несколько файлов': 'Цхьа я дукха файл тӀе яккха',
+    'Подготовь видео\\nк следующему шагу.': 'Видео хьалххе хьажий\\nкхин тӀаьхьа.',
+    'Обработка выполняется локально на вашем устройстве': 'Къобалдар хьан устройстве ду',
+    'Добавь видео, настрой качество и запусти обработку.': 'Видео тӀе яккха, кхачество тохха, къобалдар юкъадала.',
+    'Сначала обработать первые 20 секунд, чтобы проверить настройки и примерный размер файла.': 'Тохар а файл размер а хьажа, хьалха 20 секунд къобалде.',
+    'CRF: ниже — выше качество и обычно больше размер. Доступный диапазон этого профиля: 0–35.': 'CRF: кӀезиг — кхачество дукха, файл а дукха. Диапазон: 0–35.',
+    'Сохраняются локально в приложении. Статистика платформ сюда автоматически не импортируется.': 'Приложенехь ларло. Платформан статистика автоматически ца йо.',
+    'Рекомендация основана на доступных метаданных и размере файла, а не гарантирует лучший результат для любого видео.': 'Хьехам метаданни а файл размер а тӀе билгалдаьккхина; массо видеонна дика результат хилар гӀо ца ло.',
+    'Этот профиль использует H.264 в MP4. CRF 0 зависит от сборки кодека и не гарантируется как lossless; для строгого режима без потерь выбирайте FFV1.': 'ХӀокху профиль H.264 MP4 чу лело. CRF 0 lossless хилар гаранти йоцуш ду; lossless кхачанна FFV1 талла.',
+    'Один и тот же 20-секундный фрагмент будет обработан каждым выбранным профилем. Сравнение показывает размер и время, но не гарантирует одинаковое визуальное качество.': 'Цхьа 20 секунд клип хьалхарера профилашца къобалделла. ТӀекъасто размер а хан а гойту, визуальни кхачество цхьа хилар гаранти йоцуш.',
+    'Кадры показывают только одну точку примерно в середине видео. Это визуальная проверка, а не математическое доказательство отсутствия потерь. Для FFV1 исходные декодированные кадры должны сохраняться без потерь.': 'Кадраш видеон юккъера цхьа меттиг гойту. ХӀара визуальни хьажар ду, потерь йоцун математически далил дац. FFV1 декодировани кадраш дӀадолу доцуш ларъян деза.',
+    'ОРИГИНАЛ': 'ХЬАЛХАРНИГ',
+    'Размер неизвестен': 'Размер ца хууш',
+    'Исходное видео': 'Хьалхарни видео',
+    'Видео': 'Видео',
+    'Название публикации': 'Публикацин цӀе',
+    'Описание': 'Дехар',
+    'Теги (через запятую)': 'Тегаш (запятойца)',
+    'Заметки / результаты теста': 'ТӀедиллар / тестан результаташ',
+    'Email лицензии': 'Лицензин email',
+    'Лицензионный ключ': 'Лицензин къеп',
+    'Информация о сохранении': 'Ларъяр хаам',
+    'Выбрать папку результата': 'Результатан папка талла',
+    'Открыть папку': 'Папка дӀаяла',
+    'Как сохранить результат': 'Результат муха ларъян',
+    'Анализ и сведения о видео': 'Видео анализ а хаамаш а',
+    'Поделиться или сохранить видео': 'Видео дӀасакъасто я ларъян',
+    'Убрать из списка': 'ТӀера дӀаяккха',
+    'Автоматическая проверка свободного места недоступна на этом устройстве.': 'ХӀокху устройстве свободни меттиг автоматически хьажа йиш яц.',
+    'В очереди нет доступных исходных видео.': 'Очередехь хьалхарни видео яц.',
+    'Вариант публикации сохранён.': 'Публикацин вариант ларбийна.',
+    'Готовые видео сохраняются в галерею телефона, альбом VideoForge.': 'Дика видеош телефонан галерее, VideoForge альбом чу ларло.',
+    'Дождитесь завершения кодирования перед добавлением файлов.': 'Файлаш тӀе яккха хьалха кодировани чекхъялар кхетта хьажа.',
+    'Лицензия ещё загружается. Подождите несколько секунд и повторите.': 'Лицензи хӀинца юкъайогӀу. КӀезиг сахьат хьажа, кхин хьажа.',
+    'Лицензия успешно активирована.': 'Лицензи дика активированна.',
+    'Нет готового файла для проверки.': 'Хьажа готови файл яц.',
+    'Папка результата сохранена.': 'Результатан папка ларйина.',
+    'Подготавливаем кадры для сравнения…': 'ТӀекъастаран кадраш хьалххе…',
+    'Поддерживаются MP4, MOV, MKV, M4V, AVI и WEBM.': 'ДӀаяздар форматаш: MP4, MOV, MKV, M4V, AVI, WEBM.',
+    'Пользовательский профиль сохранён.': 'Хьалххе профиль ларбийна.',
+    'Проверка лицензии ещё не завершена.': 'Лицензин хьажар хӀинца чекхдаьлла дац.',
+    'Сначала выберите видео для кодирования.': 'Хьалха кодированина видео талла.',
+    'Сначала добавьте видео, чтобы подобрать профиль.': 'Профиль талларна хьалха видео тӀе яккха.',
+    'Эти видео уже есть в очереди.': 'ХӀара видеош очередь чу хӀинца ду.',
+    'Основная папка недоступна. Используется папка приложения.': 'Хьалхарни папка ца ло. Приложенан папка лелош ю.',
+    'Требуется доступ к хранилищу': 'Храненин доступ оьшу',
+    'Готово к работе': 'Дайарна',
+    'Запускаем кодирование…': 'Кодировани юкъадолу…',
+    'Отменяем текущий файл…': 'ХӀинцалера файл дӀаяккха…',
+    'Подготавливаем папку для результатов…': 'Результатан папка хьалххе…',
+    'Папка результата изменена': 'Результатан папка хийцина',
+    'дн.': 'дийна',
+    'не рассчитано': 'хисап дина дац',
+  },
+};
+String tr(String russian) {
+  if (_activeLanguage == 'ru') return russian;
+  if (russian.startsWith('Лицензия активна')) {
+    return _activeLanguage == 'en' ? russian.replaceFirst('Лицензия активна', 'License active') : russian.replaceFirst('Лицензия активна', 'Лицензи активна');
+  }
+  final trial = RegExp(r'^Пробный период: осталось (\d+) дн\.$').firstMatch(russian);
+  if (trial != null) {
+    final days = trial.group(1)!;
+    return _activeLanguage == 'en' ? 'Trial period: $days days left' : 'Тестан хан: $days де дӀа';
+  }
+  return _translations[_activeLanguage]?[russian] ?? russian;
+}
+
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    videoForgeLanguage.value = prefs.getString('videoforge.language') ?? 'ru';
+    _activeLanguage = videoForgeLanguage.value;
+  } catch (_) {}
   runApp(const VideoForgeApp());
 }
 
@@ -48,17 +356,17 @@ class VideoForgeApp extends StatelessWidget {
         ),
         scaffoldBackgroundColor: background,
         textTheme: const TextTheme(
-          headlineMedium: TextStyle(fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: -1.1, color: Color(0xFFF3F4EE)),
-          headlineSmall: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.7, color: Color(0xFFF3F4EE)),
-          titleLarge: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFFF3F4EE)),
-          bodyMedium: TextStyle(fontSize: 14, height: 1.45, color: Color(0xFFB5B9AE)),
+          headlineMedium: TextStyle(fontSize: 25, fontWeight: FontWeight.w800, letterSpacing: -1.1, color: Color(0xFFF3F4EE)),
+          headlineSmall: TextStyle(fontSize: 21, fontWeight: FontWeight.w800, letterSpacing: -0.7, color: Color(0xFFF3F4EE)),
+          titleLarge: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFFF3F4EE)),
+          bodyMedium: TextStyle(fontSize: 13, height: 1.35, color: Color(0xFFB5B9AE)),
         ),
         cardTheme: CardThemeData(
           color: surface,
           elevation: 0,
           margin: EdgeInsets.zero,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(16),
             side: const BorderSide(color: border),
           ),
         ),
@@ -72,18 +380,21 @@ class VideoForgeApp extends StatelessWidget {
           style: FilledButton.styleFrom(
             foregroundColor: const Color(0xFF15180F),
             backgroundColor: accent,
-            minimumSize: const Size(0, 54),
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+            minimumSize: const Size(0, 42),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            visualDensity: VisualDensity.compact,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             textStyle: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.2),
           ),
         ),
         outlinedButtonTheme: OutlinedButtonThemeData(
           style: OutlinedButton.styleFrom(
             foregroundColor: const Color(0xFFF3F4EE),
-            minimumSize: const Size(0, 50),
+            minimumSize: const Size(0, 40),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            visualDensity: VisualDensity.compact,
             side: const BorderSide(color: border),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
         chipTheme: ChipThemeData(
@@ -108,21 +419,21 @@ enum ExportProfile {
   custom;
 
   String get title => switch (this) {
-        ExportProfile.highQuality => 'Высокое качество',
-        ExportProfile.balanced => 'Сбалансированный',
-        ExportProfile.compact => 'Компактный размер',
-        ExportProfile.youtube1080 => 'YouTube 1080p',
-        ExportProfile.lossless => 'Без потерь — новое кодирование',
-        ExportProfile.custom => 'Мой профиль',
+        ExportProfile.highQuality => tr('Высокое качество'),
+        ExportProfile.balanced => tr('Сбалансированный'),
+        ExportProfile.compact => tr('Компактный размер'),
+        ExportProfile.youtube1080 => tr('YouTube 1080p'),
+        ExportProfile.lossless => tr('Без потерь — новое кодирование'),
+        ExportProfile.custom => tr('Мой профиль'),
       };
 
   String get description => switch (this) {
-        ExportProfile.highQuality => 'Меньше потерь качества, файл может быть больше.',
-        ExportProfile.balanced => 'Рекомендуемый баланс качества и размера.',
-        ExportProfile.compact => 'Меньше места на диске, заметнее потери качества.',
-        ExportProfile.youtube1080 => 'MP4 до 1080p с сохранением пропорций.',
-        ExportProfile.lossless => 'FFV1 в MKV: новое кодирование видео без потерь. Файл может быть значительно больше; не все платформы принимают этот формат.',
-        ExportProfile.custom => 'Пользовательские настройки кодирования. Настройте CRF и скорость в конструкторе профиля.',
+        ExportProfile.highQuality => tr('Меньше потерь качества, файл может быть больше.'),
+        ExportProfile.balanced => tr('Рекомендуемый баланс качества и размера.'),
+        ExportProfile.compact => tr('Меньше места на диске, заметнее потери качества.'),
+        ExportProfile.youtube1080 => tr('MP4 до 1080p с сохранением пропорций.'),
+        ExportProfile.lossless => tr('FFV1 в MKV: новое кодирование видео без потерь. Файл может быть значительно больше; не все платформы принимают этот формат.'),
+        ExportProfile.custom => tr('Пользовательские настройки кодирования. Настройте CRF и скорость в конструкторе профиля.'),
       };
 
   int get crf => switch (this) {
@@ -179,6 +490,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   };
 
   final List<VideoJob> _jobs = <VideoJob>[];
+  final Set<String> _selectedJobPaths = <String>{};
 
   Directory? _outputDirectory;
   bool _isPreparing = true;
@@ -424,7 +736,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
         _status = 'Папка результата изменена';
       });
       await _persistState();
-      _showMessage('Папка результата сохранена.');
+      _showMessage(tr('Папка результата сохранена.'));
     } catch (error) {
       if (mounted) {
         _showMessage('Не удалось выбрать эту папку. Проверьте права доступа: $error');
@@ -467,7 +779,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     final available = await _availableBytes(directory);
     if (available == null) {
       if (mounted && (Platform.isAndroid || Platform.isIOS)) {
-        _showMessage('Автоматическая проверка свободного места недоступна на этом устройстве.');
+        _showMessage(tr('Автоматическая проверка свободного места недоступна на этом устройстве.'));
       }
       return true; // Unknown is a warning, not a hard block.
     }
@@ -548,7 +860,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
 
   Future<void> _addVideoPaths(Iterable<String> paths) async {
     if (_isEncoding) {
-      _showMessage('Дождитесь завершения кодирования перед добавлением файлов.');
+      _showMessage(tr('Дождитесь завершения кодирования перед добавлением файлов.'));
       return;
     }
 
@@ -607,9 +919,9 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     if (unavailableCount > 0) {
       _showMessage('$unavailableCount файл(ов) недоступны. Проверьте путь и права доступа.');
     } else if (unsupportedCount > 0 && added.isEmpty) {
-      _showMessage('Поддерживаются MP4, MOV, MKV, M4V, AVI и WEBM.');
+      _showMessage(tr('Поддерживаются MP4, MOV, MKV, M4V, AVI и WEBM.'));
     } else if (added.isEmpty && pathList.isNotEmpty) {
-      _showMessage('Эти видео уже есть в очереди.');
+      _showMessage(tr('Эти видео уже есть в очереди.'));
     }
   }
 
@@ -632,7 +944,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
         .toList(growable: false);
 
     if (pending.isEmpty) {
-      _showMessage('Сначала выберите видео для кодирования.');
+      _showMessage(tr('Сначала выберите видео для кодирования.'));
       return;
     }
     if (!await _checkFreeSpace(pending)) return;
@@ -800,7 +1112,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     if (_isEncoding || _jobs.isEmpty || _outputDirectory == null) return;
     final availableJobs = _jobs.where((job) => File(job.path).existsSync()).toList();
     if (availableJobs.isEmpty) {
-      _showMessage('В очереди нет доступных исходных видео.');
+      _showMessage(tr('В очереди нет доступных исходных видео.'));
       return;
     }
     VideoJob selectedJob = availableJobs.first;
@@ -809,33 +1121,33 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Тестовый фрагмент'),
+          title: Text(tr('Тестовый фрагмент')),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              const Text('Сначала обработать первые 20 секунд, чтобы проверить настройки и примерный размер файла.'),
-              const SizedBox(height: 16),
+              Text(tr('Сначала обработать первые 20 секунд, чтобы проверить настройки и примерный размер файла.')),
+              SizedBox(height: 16),
               DropdownButtonFormField<VideoJob>(
                 value: selectedJob,
                 isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Исходное видео'),
+                decoration: InputDecoration(labelText: tr('Исходное видео')),
                 items: availableJobs.map((job) => DropdownMenuItem<VideoJob>(value: job, child: Text(job.name, overflow: TextOverflow.ellipsis))).toList(),
                 onChanged: (job) { if (job != null) setDialogState(() => selectedJob = job); },
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: 12),
               DropdownButtonFormField<ExportProfile>(
                 value: selectedProfile,
                 isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Профиль'),
+                decoration: InputDecoration(labelText: tr('Профиль')),
                 items: ExportProfile.values.map((profile) => DropdownMenuItem<ExportProfile>(value: profile, child: Text(profile.title, overflow: TextOverflow.ellipsis))).toList(),
                 onChanged: (profile) { if (profile != null) setDialogState(() => selectedProfile = profile); },
               ),
             ],
           ),
           actions: <Widget>[
-            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
-            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Создать тест')),
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text(tr('Отмена'))),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: Text(tr('Создать тест'))),
           ],
         ),
       ),
@@ -903,7 +1215,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     if (_isEncoding || _jobs.isEmpty || _outputDirectory == null) return;
     final availableJobs = _jobs.where((job) => File(job.path).existsSync()).toList();
     if (availableJobs.isEmpty) {
-      _showMessage('В очереди нет доступных исходных видео.');
+      _showMessage(tr('В очереди нет доступных исходных видео.'));
       return;
     }
 
@@ -913,7 +1225,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('Сравнить профили'),
+          title: Text(tr('Сравнить профили')),
           content: SizedBox(
             width: 460,
             child: SingleChildScrollView(
@@ -921,18 +1233,18 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  const Text('Один и тот же 20-секундный фрагмент будет обработан каждым выбранным профилем. Сравнение показывает размер и время, но не гарантирует одинаковое визуальное качество.'),
-                  const SizedBox(height: 14),
+                  Text(tr('Один и тот же 20-секундный фрагмент будет обработан каждым выбранным профилем. Сравнение показывает размер и время, но не гарантирует одинаковое визуальное качество.')),
+                  SizedBox(height: 14),
                   DropdownButtonFormField<VideoJob>(
                     value: selectedJob,
                     isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Исходное видео'),
+                    decoration: InputDecoration(labelText: tr('Исходное видео')),
                     items: availableJobs.map((job) => DropdownMenuItem<VideoJob>(value: job, child: Text(job.name, overflow: TextOverflow.ellipsis))).toList(),
                     onChanged: (job) { if (job != null) setDialogState(() => selectedJob = job); },
                   ),
-                  const SizedBox(height: 12),
-                  const Text('Профили для сравнения', style: TextStyle(fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 4),
+                  SizedBox(height: 12),
+                  Text(tr('Профили для сравнения'), style: TextStyle(fontWeight: FontWeight.w700)),
+                  SizedBox(height: 4),
                   ...ExportProfile.values.map((profile) => CheckboxListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
@@ -952,8 +1264,8 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
             ),
           ),
           actions: <Widget>[
-            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
-            FilledButton(onPressed: selectedProfiles.isEmpty ? null : () => Navigator.pop(dialogContext, true), child: const Text('Начать сравнение')),
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text(tr('Отмена'))),
+            FilledButton(onPressed: selectedProfiles.isEmpty ? null : () => Navigator.pop(dialogContext, true), child: Text(tr('Начать сравнение'))),
           ],
         ),
       ),
@@ -1032,9 +1344,9 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('Результаты сравнения'),
+          title: Text(tr('Результаты сравнения')),
           content: SizedBox(width: 480, child: SingleChildScrollView(child: SelectableText(report.join('\n\n')))),
-          actions: <Widget>[TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Закрыть'))],
+          actions: <Widget>[TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(tr('Закрыть')))],
         ),
       );
     } finally {
@@ -1067,7 +1379,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
 
   Future<void> _recommendProfile() async {
     if (_jobs.isEmpty) {
-      _showMessage('Сначала добавьте видео, чтобы подобрать профиль.');
+      _showMessage(tr('Сначала добавьте видео, чтобы подобрать профиль.'));
       return;
     }
     final job = _jobs.firstWhere((item) => File(item.path).existsSync(), orElse: () => _jobs.first);
@@ -1084,15 +1396,15 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
       reason = 'Для обычной конвертации это отправная точка. Если приоритет — архивное сохранение, выберите FFV1 без потерь; для максимальной совместимости обычно удобнее H.264/MP4.';
     }
     final apply = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
-      title: const Text('Рекомендация VideoForge'),
+      title: Text(tr('Рекомендация VideoForge')),
       content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-        Text('Для «${job.name}» предлагается профиль «${recommended.title}».', style: const TextStyle(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 10),
+        Text(tr('Для «${job.name}» предлагается профиль «${recommended.title}».'), style: const TextStyle(fontWeight: FontWeight.w700)),
+        SizedBox(height: 10),
         Text(reason),
-        const SizedBox(height: 10),
-        const Text('Рекомендация основана на доступных метаданных и размере файла, а не гарантирует лучший результат для любого видео.', style: TextStyle(fontSize: 12, color: Colors.white60)),
+        SizedBox(height: 10),
+        Text(tr('Рекомендация основана на доступных метаданных и размере файла, а не гарантирует лучший результат для любого видео.'), style: TextStyle(fontSize: 12, color: Colors.white60)),
       ]),
-      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Оставить как есть')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Применить профиль'))],
+      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(context, false), child: Text(tr('Оставить как есть'))), FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(tr('Применить профиль')))],
     ));
     if (apply == true && mounted) {
       setState(() => _profile = recommended);
@@ -1136,26 +1448,26 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     var crf = _customCrf.toDouble();
     var preset = _customPreset;
     final result = await showDialog<bool>(context: context, builder: (context) => StatefulBuilder(builder: (context, setDialogState) => AlertDialog(
-      title: const Text('Конструктор профиля'),
+      title: Text(tr('Конструктор профиля')),
       content: SizedBox(width: 420, child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-        const Text('CRF: ниже — выше качество и обычно больше размер. Доступный диапазон этого профиля: 0–35.'),
+        Text(tr('CRF: ниже — выше качество и обычно больше размер. Доступный диапазон этого профиля: 0–35.')),
         Slider(value: crf, min: 0, max: 35, divisions: 35, label: crf.round().toString(), onChanged: (v) => setDialogState(() => crf = v)),
         Text('CRF ${crf.round()}'),
-        const SizedBox(height: 12),
-        const Text('Скорость кодирования'),
-        const SizedBox(height: 6),
+        SizedBox(height: 12),
+        Text(tr('Скорость кодирования')),
+        SizedBox(height: 6),
         DropdownButtonFormField<String>(value: preset, items: const <DropdownMenuItem<String>>[
-          DropdownMenuItem(value: 'ultrafast', child: Text('Очень быстро')), DropdownMenuItem(value: 'fast', child: Text('Быстро')), DropdownMenuItem(value: 'medium', child: Text('Сбалансировано')), DropdownMenuItem(value: 'slow', child: Text('Медленно, эффективнее')),
+          DropdownMenuItem(value: 'ultrafast', child: Text(tr('Очень быстро'))), DropdownMenuItem(value: 'fast', child: Text(tr('Быстро'))), DropdownMenuItem(value: 'medium', child: Text(tr('Сбалансировано'))), DropdownMenuItem(value: 'slow', child: Text(tr('Медленно, эффективнее'))),
         ], onChanged: (v) { if (v != null) setDialogState(() => preset = v); }),
-        const SizedBox(height: 8),
-        const Text('Этот профиль использует H.264 в MP4. CRF 0 зависит от сборки кодека и не гарантируется как lossless; для строгого режима без потерь выбирайте FFV1.', style: TextStyle(fontSize: 12)),
+        SizedBox(height: 8),
+        Text(tr('Этот профиль использует H.264 в MP4. CRF 0 зависит от сборки кодека и не гарантируется как lossless; для строгого режима без потерь выбирайте FFV1.'), style: TextStyle(fontSize: 12)),
       ])),
-      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Отмена')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Сохранить профиль'))],
+      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(context, false), child: Text(tr('Отмена'))), FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(tr('Сохранить профиль')))],
     )));
     if (result != true || !mounted) return;
     setState(() { _customCrf = crf.round(); _customPreset = preset; _profile = ExportProfile.custom; });
     await _persistState();
-    _showMessage('Пользовательский профиль сохранён.');
+    _showMessage(tr('Пользовательский профиль сохранён.'));
   }
 
   Future<void> _showVideoDetails(VideoJob job) async {
@@ -1165,7 +1477,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     await showDialog<void>(context: context, builder: (context) => AlertDialog(
       title: Text(job.name, maxLines: 2, overflow: TextOverflow.ellipsis),
       content: SizedBox(width: 560, child: SingleChildScrollView(child: SelectableText(data ?? 'Не удалось прочитать метаданные видео.\nПроверьте доступ к файлу и поддержку FFprobe.', style: const TextStyle(fontFamily: 'monospace', fontSize: 12)))),
-      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть'))],
+      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Закрыть')))],
     ));
   }
 
@@ -1177,34 +1489,34 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     final tags = TextEditingController(text: selected.publishTags);
     final notes = TextEditingController(text: selected.publishNotes);
     await showDialog<void>(context: context, builder: (context) => StatefulBuilder(builder: (context, setDialogState) => AlertDialog(
-      title: const Text('Менеджер публикаций'),
+      title: Text(tr('Менеджер публикаций')),
       content: SizedBox(width: 560, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-        DropdownButtonFormField<VideoJob>(value: selected, isExpanded: true, decoration: const InputDecoration(labelText: 'Видео'), items: _jobs.map((j) => DropdownMenuItem(value: j, child: Text(j.name, overflow: TextOverflow.ellipsis))).toList(), onChanged: (job) { if (job == null) return; setDialogState(() { selected = job; title.text = job.publishTitle; description.text = job.publishDescription; tags.text = job.publishTags; notes.text = job.publishNotes; }); }),
-        const SizedBox(height: 10), TextField(controller: title, decoration: const InputDecoration(labelText: 'Название публикации')),
-        const SizedBox(height: 10), TextField(controller: description, maxLines: 3, decoration: const InputDecoration(labelText: 'Описание')),
-        const SizedBox(height: 10), TextField(controller: tags, decoration: const InputDecoration(labelText: 'Теги (через запятую)')),
-        const SizedBox(height: 10), TextField(controller: notes, maxLines: 2, decoration: const InputDecoration(labelText: 'Заметки / результаты теста')),
-        const SizedBox(height: 8), const Text('Сохраняются локально в приложении. Статистика платформ сюда автоматически не импортируется.', style: TextStyle(fontSize: 12)),
+        DropdownButtonFormField<VideoJob>(value: selected, isExpanded: true, decoration: InputDecoration(labelText: tr('Видео')), items: _jobs.map((j) => DropdownMenuItem(value: j, child: Text(j.name, overflow: TextOverflow.ellipsis))).toList(), onChanged: (job) { if (job == null) return; setDialogState(() { selected = job; title.text = job.publishTitle; description.text = job.publishDescription; tags.text = job.publishTags; notes.text = job.publishNotes; }); }),
+        SizedBox(height: 10), TextField(controller: title, decoration: InputDecoration(labelText: tr('Название публикации'))),
+        SizedBox(height: 10), TextField(controller: description, maxLines: 3, decoration: InputDecoration(labelText: tr('Описание'))),
+        SizedBox(height: 10), TextField(controller: tags, decoration: InputDecoration(labelText: tr('Теги (через запятую)'))),
+        SizedBox(height: 10), TextField(controller: notes, maxLines: 2, decoration: InputDecoration(labelText: tr('Заметки / результаты теста'))),
+        SizedBox(height: 8), Text(tr('Сохраняются локально в приложении. Статистика платформ сюда автоматически не импортируется.'), style: TextStyle(fontSize: 12)),
       ]))),
-      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть')), FilledButton(onPressed: () async { selected.publishTitle = title.text; selected.publishDescription = description.text; selected.publishTags = tags.text; selected.publishNotes = notes.text; await _persistState(); if (context.mounted) Navigator.pop(context); if (mounted) _showMessage('Вариант публикации сохранён.'); }, child: const Text('Сохранить'))],
+      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Закрыть'))), FilledButton(onPressed: () async { selected.publishTitle = title.text; selected.publishDescription = description.text; selected.publishTags = tags.text; selected.publishNotes = notes.text; await _persistState(); if (context.mounted) Navigator.pop(context); if (mounted) _showMessage(tr('Вариант публикации сохранён.')); }, child: Text(tr('Сохранить')))],
     )));
     title.dispose(); description.dispose(); tags.dispose(); notes.dispose();
   }
 
   Future<void> _openHistory() async {
     await showDialog<void>(context: context, builder: (context) => AlertDialog(
-      title: const Text('История экспорта'),
-      content: SizedBox(width: 600, child: _exportHistory.isEmpty ? const Text('История пока пуста.') : ListView(shrinkWrap: true, children: _exportHistory.map((entry) {
+      title: Text(tr('История экспорта')),
+      content: SizedBox(width: 600, child: _exportHistory.isEmpty ? Text(tr('История пока пуста.')) : ListView(shrinkWrap: true, children: _exportHistory.map((entry) {
         final sourceBytes = entry['sourceBytes'] is num ? (entry['sourceBytes'] as num).toInt() : 0;
         final outputBytes = entry['outputBytes'] is num ? (entry['outputBytes'] as num).toInt() : 0;
         return ListTile(
-          leading: const Icon(Icons.check_circle_outline, color: Color(0xFFB5F36D)),
+          leading: Icon(Icons.check_circle_outline, color: Color(0xFFB5F36D)),
           title: Text('${entry['sourceName'] ?? 'Видео'}', maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text('${entry['date'] ?? ''}\n${_formatBytes(sourceBytes)} → ${_formatBytes(outputBytes)} · ${entry['profile'] ?? ''}\n${entry['output'] ?? ''}'),
           isThreeLine: true,
         );
       }).toList())),
-      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть'))],
+      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Закрыть')))],
     ));
   }
 
@@ -1229,45 +1541,45 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
 
   Future<void> _compareLatestOutput() async {
     final completed = _jobs.where((j) => j.status == JobStatus.done && j.outputPath != null).toList();
-    if (completed.isEmpty) { _showMessage('Нет готового файла для проверки.'); return; }
+    if (completed.isEmpty) { _showMessage(tr('Нет готового файла для проверки.')); return; }
     final job = completed.last;
-    _showMessage('Подготавливаем кадры для сравнения…');
+    _showMessage(tr('Подготавливаем кадры для сравнения…'));
     final sourceFrame = await _extractPreviewFrame(job.path);
     final outputFrame = await _extractPreviewFrame(job.outputPath!);
     final source = await _probeJson(job.path);
     final output = await _probeJson(job.outputPath!);
     if (!mounted) return;
     await showDialog<void>(context: context, builder: (context) => AlertDialog(
-      title: const Text('Сравнение исходника и результата'),
+      title: Text(tr('Сравнение исходника и результата')),
       content: SizedBox(width: 760, child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         Text(job.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 12),
+        SizedBox(height: 12),
         LayoutBuilder(builder: (context, constraints) {
           final vertical = constraints.maxWidth < 520;
           final sourcePane = Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-            const Text('ОРИГИНАЛ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.2)), const SizedBox(height: 6),
-            if (sourceFrame != null) ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.file(sourceFrame, fit: BoxFit.contain, width: double.infinity)) else const AspectRatio(aspectRatio: 16 / 9, child: Center(child: Text('Кадр недоступен'))),
-            const SizedBox(height: 6), Text(_formatBytes(job.bytes), style: const TextStyle(fontSize: 12)),
+            Text(tr('ОРИГИНАЛ'), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.2)), SizedBox(height: 6),
+            if (sourceFrame != null) ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.file(sourceFrame, fit: BoxFit.contain, width: double.infinity)) else AspectRatio(aspectRatio: 16 / 9, child: Center(child: Text(tr('Кадр недоступен')))),
+            SizedBox(height: 6), Text(_formatBytes(job.bytes), style: const TextStyle(fontSize: 12)),
           ]);
           final outputPane = Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-            const Text('РЕЗУЛЬТАТ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.2)), const SizedBox(height: 6),
-            if (outputFrame != null) ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.file(outputFrame, fit: BoxFit.contain, width: double.infinity)) else const AspectRatio(aspectRatio: 16 / 9, child: Center(child: Text('Кадр недоступен'))),
-            const SizedBox(height: 6), Text(job.outputBytes == null ? 'Размер неизвестен' : _formatBytes(job.outputBytes!), style: const TextStyle(fontSize: 12)),
+            Text(tr('РЕЗУЛЬТАТ'), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.2)), SizedBox(height: 6),
+            if (outputFrame != null) ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.file(outputFrame, fit: BoxFit.contain, width: double.infinity)) else AspectRatio(aspectRatio: 16 / 9, child: Center(child: Text(tr('Кадр недоступен')))),
+            SizedBox(height: 6), Text(job.outputBytes == null ? 'Размер неизвестен' : _formatBytes(job.outputBytes!), style: const TextStyle(fontSize: 12)),
           ]);
-          return vertical ? Column(children: <Widget>[sourcePane, const SizedBox(height: 18), outputPane]) : Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Expanded(child: sourcePane), const SizedBox(width: 14), Expanded(child: outputPane)]);
+          return vertical ? Column(children: <Widget>[sourcePane, SizedBox(height: 18), outputPane]) : Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Expanded(child: sourcePane), SizedBox(width: 14), Expanded(child: outputPane)]);
         }),
-        const Divider(height: 24),
+        Divider(height: 24),
         Text('Изменение размера: ${_sizeChangeLabel(job).isEmpty ? 'не рассчитано' : _sizeChangeLabel(job)}'),
-        const SizedBox(height: 8), const Text('Кадры показывают только одну точку примерно в середине видео. Это визуальная проверка, а не математическое доказательство отсутствия потерь. Для FFV1 исходные декодированные кадры должны сохраняться без потерь.', style: TextStyle(fontSize: 12)),
-        ExpansionTile(title: const Text('Технические сведения'), children: <Widget>[
-          const Align(alignment: Alignment.centerLeft, child: Text('Исходник', style: TextStyle(fontWeight: FontWeight.bold))),
+        SizedBox(height: 8), Text(tr('Кадры показывают только одну точку примерно в середине видео. Это визуальная проверка, а не математическое доказательство отсутствия потерь. Для FFV1 исходные декодированные кадры должны сохраняться без потерь.'), style: TextStyle(fontSize: 12)),
+        ExpansionTile(title: Text(tr('Технические сведения')), children: <Widget>[
+          Align(alignment: Alignment.centerLeft, child: Text(tr('Исходник'), style: TextStyle(fontWeight: FontWeight.bold))),
           SelectableText(source ?? 'Метаданные исходника недоступны.'),
-          const Divider(),
-          const Align(alignment: Alignment.centerLeft, child: Text('Результат', style: TextStyle(fontWeight: FontWeight.bold))),
+          Divider(),
+          Align(alignment: Alignment.centerLeft, child: Text(tr('Результат'), style: TextStyle(fontWeight: FontWeight.bold))),
           SelectableText(output ?? 'Метаданные результата недоступны.'),
         ]),
       ]))),
-      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть'))],
+      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Закрыть')))],
     ));
   }
 
@@ -1547,14 +1859,28 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
 
   void _removeJob(VideoJob job) {
     if (_isEncoding) return;
-    setState(() => _jobs.remove(job));
+    setState(() {
+      _jobs.remove(job);
+      _selectedJobPaths.remove(_pathKey(job.path));
+    });
     _persistState();
+  }
+
+  void _removeSelectedJobs() {
+    if (_isEncoding || _selectedJobPaths.isEmpty) return;
+    final count = _selectedJobPaths.length;
+    setState(() {
+      _jobs.removeWhere((job) => _selectedJobPaths.contains(_pathKey(job.path)));
+      _selectedJobPaths.clear();
+    });
+    _persistState();
+    _showMessage('Убрано из очереди: $count');
   }
 
   Future<bool> _ensureLicense() async {
     final licensing = _licensing;
     if (licensing == null) {
-      _showMessage('Проверка лицензии ещё не завершена.');
+      _showMessage(tr('Проверка лицензии ещё не завершена.'));
       return false;
     }
     if (!licensing.isAllowed) {
@@ -1568,7 +1894,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     if (!mounted) return;
     final licensing = _licensing;
     if (licensing == null || !licensing.initialized) {
-      _showMessage('Лицензия ещё загружается. Подождите несколько секунд и повторите.');
+      _showMessage(tr('Лицензия ещё загружается. Подождите несколько секунд и повторите.'));
       return;
     }
 
@@ -1612,29 +1938,28 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                               color: const Color(0xFFB5F36D).withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(13),
                             ),
-                            child: const Icon(Icons.verified_user_outlined, color: Color(0xFFB5F36D)),
+                            child: Icon(Icons.verified_user_outlined, color: Color(0xFFB5F36D)),
                           ),
-                          const SizedBox(width: 12),
-                          const Expanded(
-                            child: Text(
-                              'Активация лицензии',
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Text(tr('Активация лицензии'),
                               style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
                             ),
                           ),
                           IconButton(
-                            tooltip: 'Закрыть',
+                            tooltip: tr('Закрыть'),
                             visualDensity: VisualDensity.compact,
                             onPressed: checking ? null : () => Navigator.pop(dialogContext),
-                            icon: const Icon(Icons.close_rounded),
+                            icon: Icon(Icons.close_rounded),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 10),
+                      SizedBox(height: 10),
                       Text(
-                        licensing.status,
+                        tr(licensing.status),
                         style: const TextStyle(fontSize: 13, height: 1.35, color: Color(0xFFB5B9AE)),
                       ),
-                      const SizedBox(height: 8),
+                      SizedBox(height: 8),
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
@@ -1645,8 +1970,8 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
-                            const Text('ID установки', style: TextStyle(fontSize: 11, color: Color(0xFF858B7D))),
-                            const SizedBox(height: 4),
+                            Text(tr('ID установки'), style: TextStyle(fontSize: 11, color: Color(0xFF858B7D))),
+                            SizedBox(height: 4),
                             SelectableText(
                               licensing.installId ?? 'не определён',
                               style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
@@ -1654,21 +1979,21 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      SizedBox(height: 12),
                       TextField(
                         controller: emailController,
                         enabled: !checking && !licensing.clockBlocked,
                         keyboardType: TextInputType.emailAddress,
                         textInputAction: TextInputAction.next,
                         autocorrect: false,
-                        decoration: const InputDecoration(
-                          labelText: 'Email лицензии',
+                        decoration: InputDecoration(
+                          labelText: tr('Email лицензии'),
                           hintText: 'name@example.com',
                           prefixIcon: Icon(Icons.mail_outline_rounded),
                           isDense: true,
                         ),
                       ),
-                      const SizedBox(height: 10),
+                      SizedBox(height: 10),
                       TextField(
                         controller: controller,
                         enabled: !checking && !licensing.clockBlocked,
@@ -1676,15 +2001,15 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                         enableSuggestions: false,
                         textCapitalization: TextCapitalization.none,
                         textInputAction: TextInputAction.done,
-                        decoration: const InputDecoration(
-                          labelText: 'Лицензионный ключ',
+                        decoration: InputDecoration(
+                          labelText: tr('Лицензионный ключ'),
                           hintText: 'VF1.…',
                           prefixIcon: Icon(Icons.key_outlined),
                           isDense: true,
                         ),
                       ),
                       if (errorText != null) ...<Widget>[
-                        const SizedBox(height: 10),
+                        SizedBox(height: 10),
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(10),
@@ -1700,17 +2025,17 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                         ),
                       ],
                       if (checking) ...<Widget>[
-                        const SizedBox(height: 12),
-                        const Row(
+                        SizedBox(height: 12),
+                        Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: <Widget>[
                             SizedBox(width: 17, height: 17, child: CircularProgressIndicator(strokeWidth: 2)),
                             SizedBox(width: 9),
-                            Flexible(child: Text('Выполняется проверка…', style: TextStyle(fontSize: 12))),
+                            Flexible(child: Text(tr('Выполняется проверка…'), style: TextStyle(fontSize: 12))),
                           ],
                         ),
                       ],
-                      const SizedBox(height: 14),
+                      SizedBox(height: 14),
                       SizedBox(
                         height: 48,
                         child: FilledButton.icon(
@@ -1754,18 +2079,18 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                             if (activationError == null) {
                               Navigator.pop(dialogContext);
                               if (mounted) setState(() {});
-                              _showMessage('Лицензия успешно активирована.');
+                              _showMessage(tr('Лицензия успешно активирована.'));
                             } else if (mounted) {
                               setState(() {});
                             }
                           },
                           icon: checking
-                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                              : const Icon(Icons.verified_rounded, size: 18),
-                          label: Text(checking ? 'Проверяем…' : 'Активировать'),
+                              ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                              : Icon(Icons.verified_rounded, size: 18),
+                          label: Text(tr(checking ? 'Проверяем…' : 'Активировать')),
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      SizedBox(height: 8),
                       OutlinedButton.icon(
                         onPressed: checking ? null : () async {
                           FocusScope.of(context).unfocus();
@@ -1782,8 +2107,8 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                           setDialogState(() { checking = false; errorText = checkError; });
                           if (mounted) setState(() {});
                         },
-                        icon: const Icon(Icons.sync_rounded, size: 18),
-                        label: const Text('Проверить время'),
+                        icon: Icon(Icons.sync_rounded, size: 18),
+                        label: Text(tr('Проверить время')),
                       ),
                     ],
                   ),
@@ -1803,17 +2128,17 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     final license = _licensing;
     final allowed = license?.isAllowed ?? false;
     final title = license == null
-        ? 'Лицензия'
+        ? tr('Лицензия')
         : license.isLicensed
-            ? 'Лицензия активна'
+            ? tr('Лицензия активна')
             : license.isTrialActive
-                ? 'Пробный период · ${license.trialDaysLeft} дн.'
-                : 'Требуется лицензия';
+                ? '${tr('Пробный период')} · ${license.trialDaysLeft} ${tr('дн.')}'
+                : tr('Требуется лицензия');
     return Card(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), child: Row(children: <Widget>[
       Icon(allowed ? Icons.verified_user_outlined : Icons.lock_outline_rounded, color: allowed ? const Color(0xFFB5F36D) : const Color(0xFFFF8178), size: 22),
-      const SizedBox(width: 10),
+      SizedBox(width: 10),
       Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14))),
-      OutlinedButton(onPressed: _showLicenseDialog, child: Text(allowed ? 'Лицензия' : 'Активировать')),
+      OutlinedButton(onPressed: _showLicenseDialog, child: Text(tr(allowed ? 'Лицензия' : 'Активировать'))),
     ])));
   }
 
@@ -1894,23 +2219,23 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                         if (wide)
                           Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
                             Expanded(flex: 6, child: _buildProfileCard()),
-                            const SizedBox(width: 18),
+                            SizedBox(width: 18),
                             Expanded(flex: 5, child: _buildOutputCard()),
                           ])
                         else ...<Widget>[
                           _buildProfileCard(),
-                          const SizedBox(height: 8),
+                          SizedBox(height: 8),
                           _buildOutputCard(),
                         ],
                         SizedBox(height: wide ? 16 : 8),
                         Row(children: <Widget>[
                           Expanded(child: _metricCard('В очереди', '${_jobs.length}', Icons.video_library_outlined)),
-                          const SizedBox(width: 10),
+                          SizedBox(width: 10),
                           Expanded(child: _metricCard('Готово', '$doneCount', Icons.check_circle_outline_rounded, color: const Color(0xFFB5F36D))),
-                          const SizedBox(width: 10),
+                          SizedBox(width: 10),
                           Expanded(child: _metricCard('Ошибки', '$failedCount', Icons.error_outline_rounded, color: const Color(0xFFFF8178))),
                         ]),
-                        const SizedBox(height: 8),
+                        SizedBox(height: 8),
                         if (Platform.isAndroid)
                           Card(
                             child: Theme(
@@ -1918,17 +2243,17 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                               child: ExpansionTile(
                                 tilePadding: const EdgeInsets.symmetric(horizontal: 14),
                                 childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                                leading: const Icon(Icons.tune_rounded, color: Color(0xFFB5F36D)),
-                                title: const Text('Дополнительные инструменты', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                                leading: Icon(Icons.tune_rounded, color: Color(0xFFB5F36D)),
+                                title: Text(tr('Дополнительные инструменты'), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
                                 children: <Widget>[
                                   Wrap(spacing: 6, runSpacing: 6, children: <Widget>[
-                                    OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _analyzeQueuedVideos, icon: const Icon(Icons.manage_search_rounded, size: 17), label: const Text('Анализ')),
-                                    OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _recommendProfile, icon: const Icon(Icons.auto_awesome_outlined, size: 17), label: const Text('Профиль')),
-                                    OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _createTestClip, icon: const Icon(Icons.science_outlined, size: 17), label: const Text('Тест 20 с')),
-                                    OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _compareProfilesOnTestClip, icon: const Icon(Icons.compare_rounded, size: 17), label: const Text('Сравнить')),
-                                    OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _openHistory, icon: const Icon(Icons.history_rounded, size: 17), label: const Text('История')),
-                                    OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _openPublishingManager, icon: const Icon(Icons.campaign_outlined, size: 17), label: const Text('Публикации')),
-                                    OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _compareLatestOutput, icon: const Icon(Icons.compare_arrows_rounded, size: 17), label: const Text('Результат')),
+                                    OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _analyzeQueuedVideos, icon: Icon(Icons.manage_search_rounded, size: 17), label: Text(tr('Анализ'))),
+                                    OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _recommendProfile, icon: Icon(Icons.auto_awesome_outlined, size: 17), label: Text(tr('Профиль'))),
+                                    OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _createTestClip, icon: Icon(Icons.science_outlined, size: 17), label: Text(tr('Тест 20 с'))),
+                                    OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _compareProfilesOnTestClip, icon: Icon(Icons.compare_rounded, size: 17), label: Text(tr('Сравнить'))),
+                                    OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _openHistory, icon: Icon(Icons.history_rounded, size: 17), label: Text(tr('История'))),
+                                    OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _openPublishingManager, icon: Icon(Icons.campaign_outlined, size: 17), label: Text(tr('Публикации'))),
+                                    OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _compareLatestOutput, icon: Icon(Icons.compare_arrows_rounded, size: 17), label: Text(tr('Результат'))),
                                   ]),
                                 ],
                               ),
@@ -1936,56 +2261,56 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                           )
                         else
                           Wrap(spacing: 8, runSpacing: 8, children: <Widget>[
-                            OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _analyzeQueuedVideos, icon: const Icon(Icons.manage_search_rounded), label: const Text('Анализ видео')),
-                            OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _recommendProfile, icon: const Icon(Icons.auto_awesome_outlined), label: const Text('Подобрать профиль')),
-                            OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _createTestClip, icon: const Icon(Icons.science_outlined), label: const Text('Тест 20 секунд')),
-                            OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _compareProfilesOnTestClip, icon: const Icon(Icons.compare_rounded), label: const Text('Сравнить профили')),
-                            OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _openHistory, icon: const Icon(Icons.history_rounded), label: const Text('История экспорта')),
-                            OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _openPublishingManager, icon: const Icon(Icons.campaign_outlined), label: const Text('Публикации')),
-                            OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _compareLatestOutput, icon: const Icon(Icons.compare_arrows_rounded), label: const Text('Проверить результат')),
+                            OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _analyzeQueuedVideos, icon: Icon(Icons.manage_search_rounded), label: Text(tr('Анализ видео'))),
+                            OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _recommendProfile, icon: Icon(Icons.auto_awesome_outlined), label: Text(tr('Подобрать профиль'))),
+                            OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _createTestClip, icon: Icon(Icons.science_outlined), label: Text(tr('Тест 20 секунд'))),
+                            OutlinedButton.icon(onPressed: _jobs.isEmpty || _isEncoding ? null : _compareProfilesOnTestClip, icon: Icon(Icons.compare_rounded), label: Text(tr('Сравнить профили'))),
+                            OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _openHistory, icon: Icon(Icons.history_rounded), label: Text(tr('История экспорта'))),
+                            OutlinedButton.icon(onPressed: _jobs.isEmpty ? null : _openPublishingManager, icon: Icon(Icons.campaign_outlined), label: Text(tr('Публикации'))),
+                            OutlinedButton.icon(onPressed: _jobs.where((j) => j.status == JobStatus.done).isEmpty ? null : _compareLatestOutput, icon: Icon(Icons.compare_arrows_rounded), label: Text(tr('Проверить результат'))),
                           ]),
-                        const SizedBox(height: 18),
+                        SizedBox(height: 12),
                         _buildQueueCard(doneCount),
                         if (_isEncoding) ...<Widget>[
-                          const SizedBox(height: 18),
+                          SizedBox(height: 18),
                           Card(child: Padding(padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
                             Row(children: <Widget>[
-                              const Expanded(child: Text('Обработка видео', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
+                              Expanded(child: Text(tr('Обработка видео'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
                               Text('$_currentJob / $_currentTotal', style: const TextStyle(color: Color(0xFFB5F36D), fontWeight: FontWeight.w800)),
                             ]),
-                            const SizedBox(height: 14),
+                            SizedBox(height: 14),
                             ClipRRect(borderRadius: BorderRadius.circular(99), child: LinearProgressIndicator(minHeight: 8, value: batchProgress, backgroundColor: const Color(0xFF30342B))),
-                            const SizedBox(height: 10),
+                            SizedBox(height: 10),
                             Text(_currentProgress == null ? 'Обработано ${_formatClock(_currentMediaSeconds)}' : 'Текущий файл: ${(_currentProgress! * 100).round()}% · ${_formatClock(_currentMediaSeconds)}', style: const TextStyle(color: Color(0xFFB5B9AE), fontSize: 12)),
                             if (_currentSpeed > 0 || remainingSeconds != null) ...<Widget>[
-                              const SizedBox(height: 4),
+                              SizedBox(height: 4),
                               Text('${_currentSpeed > 0 ? 'Скорость ${_currentSpeed.toStringAsFixed(1)}×' : ''}${_currentSpeed > 0 && remainingSeconds != null ? '  ·  ' : ''}${remainingSeconds != null ? 'Осталось около ${_formatClock(remainingSeconds)}' : ''}', style: const TextStyle(color: Color(0xFF858B7D), fontSize: 12)),
                             ],
                           ]))),
                         ],
-                        const SizedBox(height: 18),
+                        SizedBox(height: 18),
                         Card(child: Padding(padding: const EdgeInsets.all(18), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <Widget>[
                           Row(children: <Widget>[
                             Container(width: 9, height: 9, decoration: BoxDecoration(color: _initializationError == null ? const Color(0xFFB5F36D) : const Color(0xFFFFC56C), shape: BoxShape.circle)),
-                            const SizedBox(width: 9),
-                            Expanded(child: Text(_status, style: const TextStyle(color: Color(0xFFB5B9AE), fontSize: 13))),
+                            SizedBox(width: 9),
+                            Expanded(child: Text(tr(_status), style: const TextStyle(color: Color(0xFFB5B9AE), fontSize: 13))),
                           ]),
                           if (_initializationError != null) ...<Widget>[
-                            const SizedBox(height: 8),
-                            Text(_initializationError!, style: const TextStyle(color: Color(0xFFFFC56C), fontSize: 12)),
+                            SizedBox(height: 8),
+                            Text(tr(_initializationError!), style: const TextStyle(color: Color(0xFFFFC56C), fontSize: 12)),
                           ],
-                          const SizedBox(height: 16),
+                          SizedBox(height: 16),
                           FilledButton.icon(
                             onPressed: _isPreparing || _isEncoding || _outputDirectory == null ? null : _encodeAll,
-                            icon: _isEncoding ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF15180F))) : const Icon(Icons.play_arrow_rounded),
+                            icon: _isEncoding ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF15180F))) : Icon(Icons.play_arrow_rounded),
                             label: Text(_isEncoding ? 'ОБРАБОТКА $_currentJob/$_currentTotal' : 'НАЧАТЬ ОБРАБОТКУ'),
                           ),
                           if (_isEncoding) ...<Widget>[
-                            const SizedBox(height: 10),
-                            OutlinedButton.icon(onPressed: _cancelRequested ? null : _cancelEncoding, icon: const Icon(Icons.stop_rounded), label: Text(_cancelRequested ? 'ОСТАНОВКА…' : 'ОСТАНОВИТЬ ОБРАБОТКУ')),
+                            SizedBox(height: 10),
+                            OutlinedButton.icon(onPressed: _cancelRequested ? null : _cancelEncoding, icon: Icon(Icons.stop_rounded), label: Text(_cancelRequested ? 'ОСТАНОВКА…' : 'ОСТАНОВИТЬ ОБРАБОТКУ')),
                           ],
-                          const SizedBox(height: 14),
-                          const Text('Обработка выполняется локально на вашем устройстве', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF858B7D), fontSize: 11)),
+                          SizedBox(height: 14),
+                          Text(tr('Обработка выполняется локально на вашем устройстве'), textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF858B7D), fontSize: 11)),
                         ]))),
                       ],
                     );
@@ -2009,19 +2334,17 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                             width: 2,
                           ),
                         ),
-                        child: const Column(
+                        child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: <Widget>[
                             Icon(Icons.file_download_outlined, size: 48, color: Color(0xFFB5F36D)),
                             SizedBox(height: 14),
-                            Text(
-                              'Отпустите файлы здесь',
+                            Text(tr('Отпустите файлы здесь'),
                               textAlign: TextAlign.center,
                               style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
                             ),
                             SizedBox(height: 7),
-                            Text(
-                              'MP4 · MOV · MKV · M4V · AVI · WEBM',
+                            Text(tr('MP4 · MOV · MKV · M4V · AVI · WEBM'),
                               textAlign: TextAlign.center,
                               style: TextStyle(color: Color(0xFFB5B9AE)),
                             ),
@@ -2039,11 +2362,11 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   }
 
   Widget _metricCard(String label, String value, IconData icon, {Color color = const Color(0xFF858B7D)}) {
-    return Card(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15), child: Row(children: <Widget>[
+    return Card(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9), child: Row(children: <Widget>[
       Icon(icon, size: 20, color: color),
-      const SizedBox(width: 10),
+      SizedBox(width: 10),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-        Text(value, style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w800, color: Color(0xFFF3F4EE))),
+        Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFFF3F4EE))),
         Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Color(0xFF858B7D))),
       ])),
     ])));
@@ -2070,14 +2393,14 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   }
 
   Widget _buildProfileCard() {
-    return Card(child: Padding(padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 14 : 22), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-      Row(children: <Widget>[Container(width: 38, height: 38, decoration: BoxDecoration(color: const Color(0xFFB5F36D).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.tune_rounded, color: Color(0xFFB5F36D))), const SizedBox(width: 12), const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text('Профиль экспорта', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)), SizedBox(height: 3), Text('Выберите, что важнее: качество или размер', style: TextStyle(fontSize: 11, color: Color(0xFF858B7D))) ]))]),
-      const SizedBox(height: 18),
+    return Card(child: Padding(padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 10 : 18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+      Row(children: <Widget>[Container(width: 32, height: 32, decoration: BoxDecoration(color: const Color(0xFFB5F36D).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)), child: Icon(Icons.tune_rounded, color: Color(0xFFB5F36D))), SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text(tr('Профиль экспорта'), style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)), SizedBox(height: 3), Text(tr('Выберите, что важнее: качество или размер'), style: TextStyle(fontSize: 11, color: Color(0xFF858B7D))) ]))]),
+      SizedBox(height: 12),
       ...ExportProfile.values.map((profile) {
         final selected = _profile == profile;
         final icon = switch (profile) { ExportProfile.highQuality => Icons.high_quality_rounded, ExportProfile.balanced => Icons.balance_rounded, ExportProfile.compact => Icons.sd_storage_rounded, ExportProfile.youtube1080 => Icons.smart_display_rounded, ExportProfile.lossless => Icons.verified_rounded, ExportProfile.custom => Icons.tune_rounded };
-        return Padding(padding: const EdgeInsets.only(bottom: 6), child: Material(color: selected ? const Color(0xFFB5F36D).withValues(alpha: 0.09) : const Color(0xFF131510), borderRadius: BorderRadius.circular(15), child: InkWell(borderRadius: BorderRadius.circular(15), onTap: _isEncoding ? null : () { setState(() => _profile = profile); _persistState(); }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10), constraints: const BoxConstraints(minHeight: 66), decoration: BoxDecoration(borderRadius: BorderRadius.circular(15), border: Border.all(color: selected ? const Color(0xFFB5F36D) : const Color(0xFF30342B))), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-          Icon(icon, color: selected ? const Color(0xFFB5F36D) : const Color(0xFF858B7D), size: 21), const SizedBox(width: 11), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text(profile.title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: selected ? const Color(0xFFF3F4EE) : const Color(0xFFCFD2C9))), const SizedBox(height: 4), Text(profile.description, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, height: 1.3, color: Color(0xFF858B7D)))])), const SizedBox(width: 8), Icon(selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, color: selected ? const Color(0xFFB5F36D) : const Color(0xFF505548), size: 19),
+        return Padding(padding: const EdgeInsets.only(bottom: 6), child: Material(color: selected ? const Color(0xFFB5F36D).withValues(alpha: 0.09) : const Color(0xFF131510), borderRadius: BorderRadius.circular(15), child: InkWell(borderRadius: BorderRadius.circular(15), onTap: _isEncoding ? null : () { setState(() => _profile = profile); _persistState(); }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7), constraints: const BoxConstraints(minHeight: 54), decoration: BoxDecoration(borderRadius: BorderRadius.circular(15), border: Border.all(color: selected ? const Color(0xFFB5F36D) : const Color(0xFF30342B))), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+          Icon(icon, color: selected ? const Color(0xFFB5F36D) : const Color(0xFF858B7D), size: 21), SizedBox(width: 11), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text(profile.title, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: selected ? const Color(0xFFF3F4EE) : const Color(0xFFCFD2C9))), SizedBox(height: 2), Text(profile.description, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, height: 1.3, color: Color(0xFF858B7D)))])), SizedBox(width: 8), Icon(selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, color: selected ? const Color(0xFFB5F36D) : const Color(0xFF505548), size: 19),
         ])))));
       }),
     ])));
@@ -2085,86 +2408,112 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
 
   Widget _buildHeader() {
     return Row(children: <Widget>[
-      Container(width: 54, height: 54, decoration: BoxDecoration(color: const Color(0xFFB5F36D), borderRadius: BorderRadius.circular(17)), child: const Icon(Icons.movie_filter_rounded, color: Color(0xFF15180F), size: 30)),
-      const SizedBox(width: 14),
-      const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
+      Container(width: 42, height: 42, decoration: BoxDecoration(color: const Color(0xFFB5F36D), borderRadius: BorderRadius.circular(13)), child: Icon(Icons.movie_filter_rounded, color: Color(0xFF15180F), size: 24)),
+      SizedBox(width: 10),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
         Text('VIDEOFORGE', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 2.4, color: Color(0xFFB5F36D))),
         SizedBox(height: 3),
-        Text('Конвертация видео', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, letterSpacing: -0.45)),
+        Text(tr('Конвертация видео'), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: -0.45)),
       ])),
-      if (_isPreparing) const SizedBox(width: 19, height: 19, child: CircularProgressIndicator(strokeWidth: 2)) else Container(padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8), decoration: BoxDecoration(color: const Color(0xFFB5F36D).withValues(alpha: 0.09), borderRadius: BorderRadius.circular(30), border: Border.all(color: const Color(0xFF30342B))), child: const Row(mainAxisSize: MainAxisSize.min, children: <Widget>[Icon(Icons.shield_outlined, size: 15, color: Color(0xFFB5F36D)), SizedBox(width: 6), Text('ЛОКАЛЬНО', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.7, color: Color(0xFFB5F36D))) ])),
+      PopupMenuButton<String>(
+        tooltip: 'Language / Язык / Мотт',
+        onSelected: (language) async {
+          setState(() {
+            videoForgeLanguage.value = language;
+            _activeLanguage = language;
+          });
+          try {
+            await (await SharedPreferences.getInstance()).setString('videoforge.language', language);
+          } catch (_) {}
+        },
+        itemBuilder: (context) => const <PopupMenuEntry<String>>[
+          PopupMenuItem(value: 'ru', child: Text('Русский')),
+          PopupMenuItem(value: 'en', child: Text('English')),
+          PopupMenuItem(value: 'ce', child: Text('Нохчийн')),
+        ],
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(border: Border.all(color: const Color(0xFF30342B)), borderRadius: BorderRadius.circular(10)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            Icon(Icons.language, size: 16), SizedBox(width: 4),
+            Text(switch (videoForgeLanguage.value) { 'en' => 'EN', 'ce' => 'НОХ', _ => 'RU' }, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
+          ]),
+        ),
+      ),
+      SizedBox(width: 8),
+      if (_isPreparing) SizedBox(width: 19, height: 19, child: CircularProgressIndicator(strokeWidth: 2)) else Container(padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8), decoration: BoxDecoration(color: const Color(0xFFB5F36D).withValues(alpha: 0.09), borderRadius: BorderRadius.circular(30), border: Border.all(color: const Color(0xFF30342B))), child: Row(mainAxisSize: MainAxisSize.min, children: <Widget>[Icon(Icons.shield_outlined, size: 15, color: Color(0xFFB5F36D)), SizedBox(width: 6), Text(tr('ЛОКАЛЬНО'), style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.7, color: Color(0xFFB5F36D))) ])),
     ]);
   }
 
   Widget _buildHeroCard() {
-    return Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(26), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: <Color>[Color(0xFF252A1E), Color(0xFF1A1C18), Color(0xFF171914)]), border: Border.all(color: const Color(0xFF3B4430))), child: Padding(padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 14 : 26), child: LayoutBuilder(builder: (context, constraints) {
+    return Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: <Color>[Color(0xFF252A1E), Color(0xFF1A1C18), Color(0xFF171914)]), border: Border.all(color: const Color(0xFF3B4430))), child: Padding(padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 10 : 20), child: LayoutBuilder(builder: (context, constraints) {
       final compact = constraints.maxWidth < 580;
       if (compact && Platform.isAndroid) {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            const Row(
+            Row(
               children: <Widget>[
                 Icon(Icons.movie_creation_outlined, color: Color(0xFFB5F36D), size: 24),
                 SizedBox(width: 9),
-                Expanded(child: Text('Пакетная обработка', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
+                Expanded(child: Text(tr('Пакетная обработка'), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800))),
               ],
             ),
-            const SizedBox(height: 5),
-            const Text('Добавьте видео и выберите качество.', style: TextStyle(fontSize: 12, height: 1.35, color: Color(0xFFB5B9AE))),
-            const SizedBox(height: 12),
+            SizedBox(height: 4),
+            Text(tr('Добавьте видео и выберите качество.'), style: TextStyle(fontSize: 12, height: 1.35, color: Color(0xFFB5B9AE))),
+            SizedBox(height: 12),
             SizedBox(
-              height: 46,
+              height: 40,
               child: FilledButton.icon(
                 onPressed: _isEncoding || _isPreparing ? null : _pickVideos,
-                icon: const Icon(Icons.add_rounded),
+                icon: Icon(Icons.add_rounded),
                 label: Text(_jobs.isEmpty ? 'Добавить видео' : 'Добавить ещё'),
               ),
             ),
             if (_jobs.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
               SizedBox(
-                height: 44,
+                height: 38,
                 child: OutlinedButton.icon(
                   onPressed: _isEncoding || _isPreparing ? null : _encodeAll,
-                  icon: const Icon(Icons.play_arrow_rounded),
-                  label: const Text('Запустить очередь'),
+                  icon: Icon(Icons.play_arrow_rounded),
+                  label: Text(tr('Запустить очередь')),
                 ),
               ),
             ],
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 4,
               children: <Widget>[
-                TextButton.icon(onPressed: _isEncoding ? null : _configureCustomProfile, icon: const Icon(Icons.tune_rounded, size: 17), label: const Text('Мой профиль')),
-                TextButton.icon(onPressed: _exportDiagnostics, icon: const Icon(Icons.receipt_long_outlined, size: 17), label: const Text('Диагностика')),
+                TextButton.icon(onPressed: _isEncoding ? null : _configureCustomProfile, icon: Icon(Icons.tune_rounded, size: 17), label: Text(tr('Мой профиль'))),
+                TextButton.icon(onPressed: _exportDiagnostics, icon: Icon(Icons.receipt_long_outlined, size: 17), label: Text(tr('Диагностика'))),
               ],
             ),
           ],
         );
       }
       final intro = Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[
-        Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: const Color(0xFFB5F36D).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(30)), child: const Text('ПАКЕТНАЯ ОБРАБОТКА', style: TextStyle(color: Color(0xFFB5F36D), fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2))),
-        const SizedBox(height: 17),
-        Text('Подготовь видео\nк следующему шагу.', style: Theme.of(context).textTheme.headlineMedium),
-        const SizedBox(height: 10),
-        const Text('Добавь видео, настрой качество и запусти обработку.', style: TextStyle(fontSize: 13, height: 1.55, color: Color(0xFFB5B9AE))),
-        const SizedBox(height: 19),
-        Wrap(spacing: 7, runSpacing: 7, children: const <Widget>[_FormatChip(label: 'MP4'), _FormatChip(label: 'MOV'), _FormatChip(label: 'MKV'), _FormatChip(label: 'M4V'), _FormatChip(label: 'AVI'), _FormatChip(label: 'WEBM')]),
-        const SizedBox(height: 22),
+        Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: const Color(0xFFB5F36D).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(30)), child: Text(tr('ПАКЕТНАЯ ОБРАБОТКА'), style: TextStyle(color: Color(0xFFB5F36D), fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1.2))),
+        SizedBox(height: 17),
+        Text(tr('Подготовь видео\nк следующему шагу.'), style: Theme.of(context).textTheme.headlineMedium),
+        SizedBox(height: 10),
+        Text(tr('Добавь видео, настрой качество и запусти обработку.'), style: TextStyle(fontSize: 13, height: 1.55, color: Color(0xFFB5B9AE))),
+        SizedBox(height: 19),
+        Wrap(spacing: 7, runSpacing: 7, children: <Widget>[_FormatChip(label: 'MP4'), _FormatChip(label: 'MOV'), _FormatChip(label: 'MKV'), _FormatChip(label: 'M4V'), _FormatChip(label: 'AVI'), _FormatChip(label: 'WEBM')]),
+        SizedBox(height: 22),
         Wrap(spacing: 10, runSpacing: 10, children: <Widget>[
-          SizedBox(width: compact ? double.infinity : 205, child: FilledButton.icon(onPressed: _isEncoding || _isPreparing ? null : _pickVideos, icon: const Icon(Icons.add_rounded), label: Text(_jobs.isEmpty ? 'Добавить видео' : 'Добавить ещё'))),
-          if (_jobs.isNotEmpty) OutlinedButton.icon(onPressed: _isEncoding ? null : _encodeAll, icon: const Icon(Icons.play_arrow_rounded), label: const Text('Запустить очередь')),
-          OutlinedButton.icon(onPressed: _isEncoding ? null : _configureCustomProfile, icon: const Icon(Icons.tune_rounded), label: const Text('Мой профиль')),
-          OutlinedButton.icon(onPressed: _isEncoding ? null : _exportDiagnostics, icon: const Icon(Icons.receipt_long_outlined), label: const Text('Диагностика')),
+          SizedBox(width: compact ? double.infinity : 205, child: FilledButton.icon(onPressed: _isEncoding || _isPreparing ? null : _pickVideos, icon: Icon(Icons.add_rounded), label: Text(_jobs.isEmpty ? 'Добавить видео' : 'Добавить ещё'))),
+          if (_jobs.isNotEmpty) OutlinedButton.icon(onPressed: _isEncoding ? null : _encodeAll, icon: Icon(Icons.play_arrow_rounded), label: Text(tr('Запустить очередь'))),
+          OutlinedButton.icon(onPressed: _isEncoding ? null : _configureCustomProfile, icon: Icon(Icons.tune_rounded), label: Text(tr('Мой профиль'))),
+          OutlinedButton.icon(onPressed: _isEncoding ? null : _exportDiagnostics, icon: Icon(Icons.receipt_long_outlined), label: Text(tr('Диагностика'))),
         ]),
       ]);
       if (compact) return intro;
-      return Row(children: <Widget>[Expanded(flex: 7, child: intro), const SizedBox(width: 24), Expanded(flex: 4, child: Container(height: 220, decoration: BoxDecoration(color: const Color(0xFF11130F), borderRadius: BorderRadius.circular(22), border: Border.all(color: const Color(0xFF30342B))), child: Stack(children: <Widget>[
-        Positioned(right: 18, top: 18, child: Container(width: 72, height: 72, decoration: BoxDecoration(color: const Color(0xFFB5F36D).withValues(alpha: 0.08), borderRadius: BorderRadius.circular(20)), child: const Icon(Icons.graphic_eq_rounded, size: 38, color: Color(0xFFB5F36D)))),
-        const Center(child: Icon(Icons.movie_creation_outlined, size: 76, color: Color(0xFFB5F36D))),
-        Positioned(left: 16, right: 16, bottom: 16, child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFF20231B), borderRadius: BorderRadius.circular(14)), child: const Row(children: <Widget>[Icon(Icons.bolt_rounded, color: Color(0xFFB5F36D)), SizedBox(width: 9), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text('Готов к работе', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)), SizedBox(height: 2), Text('Без загрузки файлов в облако', style: TextStyle(fontSize: 10, color: Color(0xFF858B7D))) ]))]))),
+      return Row(children: <Widget>[Expanded(flex: 7, child: intro), SizedBox(width: 24), Expanded(flex: 4, child: Container(height: 220, decoration: BoxDecoration(color: const Color(0xFF11130F), borderRadius: BorderRadius.circular(22), border: Border.all(color: const Color(0xFF30342B))), child: Stack(children: <Widget>[
+        Positioned(right: 18, top: 18, child: Container(width: 72, height: 72, decoration: BoxDecoration(color: const Color(0xFFB5F36D).withValues(alpha: 0.08), borderRadius: BorderRadius.circular(20)), child: Icon(Icons.graphic_eq_rounded, size: 38, color: Color(0xFFB5F36D)))),
+        Center(child: Icon(Icons.movie_creation_outlined, size: 76, color: Color(0xFFB5F36D))),
+        Positioned(left: 16, right: 16, bottom: 16, child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: const Color(0xFF20231B), borderRadius: BorderRadius.circular(14)), child: Row(children: <Widget>[Icon(Icons.bolt_rounded, color: Color(0xFFB5F36D)), SizedBox(width: 9), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: <Widget>[Text(tr('Готов к работе'), style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)), SizedBox(height: 2), Text(tr('Без загрузки файлов в облако'), style: TextStyle(fontSize: 10, color: Color(0xFF858B7D))) ]))]))),
       ])))]);
     })));
   }
@@ -2185,25 +2534,25 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                   color: const Color(0xFFB5F36D).withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.photo_library_outlined, color: Color(0xFFB5F36D)),
+                child: Icon(Icons.photo_library_outlined, color: Color(0xFFB5F36D)),
               ),
-              const SizedBox(width: 11),
+              SizedBox(width: 11),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    const Text('Сохранение результата', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 3),
-                    const Text('Галерея → альбом VideoForge', style: TextStyle(fontSize: 12, color: Color(0xFFB5F36D))),
-                    const SizedBox(height: 3),
-                    Text('Оценка размера: $estimate', style: const TextStyle(fontSize: 11, color: Color(0xFF858B7D))),
+                    Text(tr('Сохранение результата'), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                    SizedBox(height: 3),
+                    Text(tr('Галерея → альбом VideoForge'), style: TextStyle(fontSize: 12, color: Color(0xFFB5F36D))),
+                    SizedBox(height: 3),
+                    Text(tr('Оценка размера: $estimate'), style: const TextStyle(fontSize: 11, color: Color(0xFF858B7D))),
                   ],
                 ),
               ),
               IconButton(
-                tooltip: 'Информация о сохранении',
-                onPressed: () => _showMessage('Готовые видео сохраняются в галерею телефона, альбом VideoForge.'),
-                icon: const Icon(Icons.info_outline_rounded),
+                tooltip: tr('Информация о сохранении'),
+                onPressed: () => _showMessage(tr('Готовые видео сохраняются в галерею телефона, альбом VideoForge.')),
+                icon: Icon(Icons.info_outline_rounded),
               ),
             ],
           ),
@@ -2222,21 +2571,20 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                 color: const Color(0xFFB5F36D).withValues(alpha: 0.10),
                 borderRadius: BorderRadius.circular(13),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.folder_copy_outlined,
                 color: Color(0xFFB5F36D),
               ),
             ),
-            const SizedBox(width: 13),
+            SizedBox(width: 13),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  const Text(
-                    'Папка для готовых видео',
+                  Text(tr('Папка для готовых видео'),
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
-                  const SizedBox(height: 5),
+                  SizedBox(height: 5),
                   SelectableText(
                     _outputDirectory?.path ?? 'Создаётся автоматически…',
                     style: const TextStyle(
@@ -2244,9 +2592,9 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                       fontSize: 12,
                     ),
                   ),
-                  const SizedBox(height: 7),
+                  SizedBox(height: 7),
                   Text('Оценка для выбранного профиля: ${_formatBytes((_jobs.fold<int>(0, (sum, job) => sum + job.bytes) * (_profile.isLossless ? 4.0 : _profile == ExportProfile.compact ? 0.65 : 1.1)).round())} (очень приблизительно)', style: const TextStyle(color: Color(0xFF858B7D), fontSize: 11)),
-                  const SizedBox(height: 7),
+                  SizedBox(height: 7),
                   Text(
                     Platform.isWindows
                         ? 'Videos/Processed_New'
@@ -2265,16 +2613,16 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
             Column(
               children: <Widget>[
                 IconButton(
-                  tooltip: 'Выбрать папку результата',
+                  tooltip: tr('Выбрать папку результата'),
                   onPressed: _isEncoding || _isPreparing ? null : _chooseOutputDirectory,
-                  icon: const Icon(Icons.drive_folder_upload_outlined),
+                  icon: Icon(Icons.drive_folder_upload_outlined),
                 ),
                 IconButton(
                   tooltip: Platform.isWindows || Platform.isMacOS
                       ? 'Открыть папку'
                       : 'Как сохранить результат',
                   onPressed: _outputDirectory == null ? null : _openOutputFolder,
-                  icon: const Icon(Icons.open_in_new_rounded),
+                  icon: Icon(Icons.open_in_new_rounded),
                 ),
               ],
             ),
@@ -2287,24 +2635,22 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
   Widget _buildQueueCard(int doneCount) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Row(
               children: <Widget>[
-                const Expanded(
-                  child: Text(
-                    'Очередь видео',
+                Expanded(
+                  child: Text(tr('Очередь видео'),
                     style: TextStyle(
-                      fontSize: 17,
+                      fontSize: 15,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
                 if (_jobs.isNotEmpty)
-                  Text(
-                    '${_jobs.length} файлов · готово $doneCount',
+                  Text(tr('${_jobs.length} файлов · готово $doneCount'),
                     style: const TextStyle(
                       color: Colors.white54,
                       fontSize: 12,
@@ -2312,29 +2658,27 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                   ),
               ],
             ),
-            const SizedBox(height: 10),
+            SizedBox(height: 7),
             if (_jobs.isEmpty)
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(
-                  vertical: 24,
+                  vertical: 14,
                   horizontal: 8,
                 ),
-                child: const Column(
+                child: Column(
                   children: <Widget>[
                     Icon(
                       Icons.video_library_outlined,
-                      size: 35,
+                      size: 27,
                       color: Colors.white38,
                     ),
                     SizedBox(height: 9),
-                    Text(
-                      'Пока нет видео',
+                    Text(tr('Пока нет видео'),
                       style: TextStyle(color: Colors.white70),
                     ),
                     SizedBox(height: 4),
-                    Text(
-                      'Добавьте один или несколько файлов',
+                    Text(tr('Добавьте один или несколько файлов'),
                       style: TextStyle(
                         color: Colors.white38,
                         fontSize: 12,
@@ -2346,20 +2690,27 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
             else
               ..._jobs.map(_buildJobTile),
             if (_jobs.isNotEmpty && !_isEncoding) ...<Widget>[
-              const SizedBox(height: 6),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: () {
-                    setState(_jobs.clear);
-                    _persistState();
-                  },
-                  icon: const Icon(
-                    Icons.delete_outline_rounded,
-                    size: 18,
+              SizedBox(height: 4),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 4,
+                runSpacing: 0,
+                children: <Widget>[
+                  if (_selectedJobPaths.isNotEmpty)
+                    TextButton.icon(
+                      onPressed: _removeSelectedJobs,
+                      icon: Icon(Icons.remove_circle_outline_rounded, size: 16),
+                      label: Text(tr('Убрать выбранные (${_selectedJobPaths.length})')),
+                    ),
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() { _jobs.clear(); _selectedJobPaths.clear(); });
+                      _persistState();
+                    },
+                    icon: Icon(Icons.delete_outline_rounded, size: 16),
+                    label: Text(tr('Очистить')),
                   ),
-                  label: const Text('Очистить список'),
-                ),
+                ],
               ),
             ],
           ],
@@ -2384,9 +2735,9 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
     };
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: Container(
-        padding: const EdgeInsets.all(11),
+        padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
           color: const Color(0xFF131510),
           borderRadius: BorderRadius.circular(14),
@@ -2394,9 +2745,23 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
         ),
         child: Row(
           children: <Widget>[
+            if (!_isEncoding) Checkbox(
+              value: _selectedJobPaths.contains(_pathKey(job.path)),
+              onChanged: (checked) {
+                setState(() {
+                  if (checked == true) {
+                    _selectedJobPaths.add(_pathKey(job.path));
+                  } else {
+                    _selectedJobPaths.remove(_pathKey(job.path));
+                  }
+                });
+              },
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+            ),
             Container(
-              width: 42,
-              height: 42,
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
                 color: statusColor.withValues(alpha: 0.10),
                 borderRadius: BorderRadius.circular(12),
@@ -2410,7 +2775,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                 color: statusColor,
               ),
             ),
-            const SizedBox(width: 11),
+            SizedBox(width: 7),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2421,7 +2786,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
-                  const SizedBox(height: 3),
+                  SizedBox(height: 3),
                   Text(
                     job.outputBytes == null
                         ? '${_formatBytes(job.bytes)}  ·  $statusLabel'
@@ -2432,15 +2797,14 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                     ),
                   ),
                   if (job.status == JobStatus.done && job.outputPath != null)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(top: 3),
-                      child: Text(
-                        'Готовый файл сохранён',
+                      child: Text(tr('Готовый файл сохранён'),
                         style: TextStyle(color: Colors.white38, fontSize: 11),
                       ),
                     ),
                   if (job.error != null) ...<Widget>[
-                    const SizedBox(height: 4),
+                    SizedBox(height: 4),
                     Text(
                       job.error!,
                       maxLines: 3,
@@ -2454,23 +2818,25 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
                 ],
               ),
             ),
-            IconButton(tooltip: 'Анализ и сведения о видео', onPressed: () => _showVideoDetails(job), icon: const Icon(Icons.info_outline_rounded)),
+            IconButton(visualDensity: VisualDensity.compact, constraints: const BoxConstraints(minWidth: 32, minHeight: 32), padding: EdgeInsets.zero, tooltip: tr('Анализ и сведения о видео'), onPressed: () => _showVideoDetails(job), icon: Icon(Icons.info_outline_rounded)),
             if (job.status == JobStatus.done && job.outputPath != null)
               Builder(
                 builder: (buttonContext) => IconButton(
-                  tooltip: 'Поделиться или сохранить видео',
+                  visualDensity: VisualDensity.compact, constraints: const BoxConstraints(minWidth: 32, minHeight: 32), padding: EdgeInsets.zero,
+                  tooltip: tr('Поделиться или сохранить видео'),
                   onPressed: () => _shareVideo(
                     job.outputPath!,
                     buttonContext,
                   ),
-                  icon: const Icon(Icons.ios_share_rounded),
+                  icon: Icon(Icons.ios_share_rounded),
                 ),
               )
             else if (!_isEncoding)
               IconButton(
-                tooltip: 'Убрать из списка',
+                visualDensity: VisualDensity.compact, constraints: const BoxConstraints(minWidth: 32, minHeight: 32), padding: EdgeInsets.zero,
+                tooltip: tr('Убрать из списка'),
                 onPressed: () => _removeJob(job),
-                icon: const Icon(
+                icon: Icon(
                   Icons.close_rounded,
                   color: Colors.white54,
                 ),
