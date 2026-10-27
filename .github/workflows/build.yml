@@ -196,19 +196,10 @@ jobs:
       
       - name: Build iOS app without signing
         run: |
-          # This edit is CI-only: make Xcode's unsigned build explicit even on
-          # Xcode versions that still validate automatic signing settings.
-          python3 - <<'PY'
-          from pathlib import Path
-          project = Path("ios/Runner.xcodeproj/project.pbxproj")
-          text = project.read_text(encoding="utf-8")
-          marker = "buildSettings = {"
-          text = text.replace(marker, marker + "\n\t\t\t\tCODE_SIGNING_ALLOWED = NO;\n\t\t\t\tCODE_SIGNING_REQUIRED = NO;\n\t\t\t\tCODE_SIGN_IDENTITY = \"\";")
-          project.write_text(text, encoding="utf-8")
-          PY
+          # Keep Flutter's generated Xcode project intact; Flutter handles no-codesign mode.
           flutter build ios --release --no-codesign \
             --dart-define=CI_BUILD=true \
-            --dart-define=LICENSE_SERVER_URL=${{ vars.LICENSE_SERVER_URL }}
+            --dart-define=LICENSE_SERVER_URL="${LICENSE_SERVER_URL}"
 
 
       - name: Package unsigned iOS app for CI inspection

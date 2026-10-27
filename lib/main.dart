@@ -1456,7 +1456,7 @@ class _EncoderHomePageState extends State<EncoderHomePage> {
         SizedBox(height: 12),
         Text(tr('Скорость кодирования')),
         SizedBox(height: 6),
-        DropdownButtonFormField<String>(value: preset, items: const <DropdownMenuItem<String>>[
+        DropdownButtonFormField<String>(value: preset, items: <DropdownMenuItem<String>>[
           DropdownMenuItem(value: 'ultrafast', child: Text(tr('Очень быстро'))), DropdownMenuItem(value: 'fast', child: Text(tr('Быстро'))), DropdownMenuItem(value: 'medium', child: Text(tr('Сбалансировано'))), DropdownMenuItem(value: 'slow', child: Text(tr('Медленно, эффективнее'))),
         ], onChanged: (v) { if (v != null) setDialogState(() => preset = v); }),
         SizedBox(height: 8),
